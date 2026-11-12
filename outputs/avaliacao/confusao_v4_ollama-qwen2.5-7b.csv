@@ -1,0 +1,8 @@
+gabarito,atendimento,comida_errada_ou_fria,demora,elogio_sem_problema,limpeza,outro,pedido_incorreto,preco
+atendimento,4,0,0,0,0,0,0,0
+demora,1,0,4,0,1,0,0,0
+limpeza,0,0,0,0,4,0,0,0
+comida_errada_ou_fria,0,4,0,0,0,0,0,0
+pedido_incorreto,1,2,0,0,0,0,5,0
+elogio_sem_problema,0,1,0,16,1,0,0,0
+outro,2,1,0,1,0,1,0,1

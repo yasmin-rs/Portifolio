@@ -1,0 +1,62 @@
+{
+  "encoding_usado": "utf-8 (errors=replace)",
+  "linhas_brutas": 33396,
+  "category_valores_unicos": [
+    "Fast food restaurant"
+  ],
+  "rating_num_nulos": 0,
+  "reviews_com_emoji_perdido": 3037,
+  "reviews_vazias_removidas": 48,
+  "duplicatas_removidas": 10061,
+  "linhas_limpas": 23287,
+  "lojas": 40,
+  "cidades": 27,
+  "distribuicao_rating_limpo": {
+    "1": 7337,
+    "2": 2307,
+    "3": 3298,
+    "4": 3752,
+    "5": 6593
+  },
+  "faixas_tempo": {
+    "3-5 anos": 11679,
+    "1-2 anos": 5866,
+    "1-11 meses": 3591,
+    "6+ anos": 1763,
+    "< 1 mês": 388
+  },
+  "reviews_curtas": 2240,
+  "amostra": {
+    "tamanho": 500,
+    "seed": 42,
+    "por_nota": {
+      "1": {
+        "pedido": 175,
+        "longas": 166,
+        "curtas": 9
+      },
+      "2": {
+        "pedido": 110,
+        "longas": 104,
+        "curtas": 6
+      },
+      "3": {
+        "pedido": 85,
+        "longas": 81,
+        "curtas": 4
+      },
+      "4": {
+        "pedido": 65,
+        "longas": 62,
+        "curtas": 3
+      },
+      "5": {
+        "pedido": 65,
+        "longas": 62,
+        "curtas": 3
+      }
+    },
+    "curtas_total": 25,
+    "lojas_cobertas": 36
+  }
+}

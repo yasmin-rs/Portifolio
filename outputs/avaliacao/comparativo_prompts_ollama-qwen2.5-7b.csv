@@ -1,0 +1,5 @@
+versao,modelo,n,acuracia_tema,acuracia_gravidade,recall_gravidade_alta,concordancia_sent_nota,taxa_json_invalido,chamadas_falhas,latencia_mediana_s,tokens_entrada_medio,custo_usd
+v1,ollama/qwen2.5:7b,50,0.6,0.52,2/2,0.6,0.306,5,36.97,297,0.0
+v2,ollama/qwen2.5:7b,50,0.8,0.9,1/2,0.72,0.0,0,22.16,782,0.0
+v3,ollama/qwen2.5:7b,50,0.76,0.96,1/2,0.68,0.02,0,19.37,1224,0.0
+v4,ollama/qwen2.5:7b,50,0.76,0.96,1/2,0.72,0.0,0,22.07,1437,0.0

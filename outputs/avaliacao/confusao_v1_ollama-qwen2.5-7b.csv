@@ -1,0 +1,8 @@
+gabarito,(falhou),atendimento,comida_errada_ou_fria,demora,elogio_sem_problema,limpeza,outro,pedido_incorreto,preco
+atendimento,0,4,0,0,0,0,0,0,0
+demora,3,0,0,3,0,0,0,0,0
+limpeza,0,0,0,0,0,4,0,0,0
+comida_errada_ou_fria,0,0,4,0,0,0,0,0,0
+pedido_incorreto,2,0,1,0,1,0,0,4,0
+elogio_sem_problema,0,2,2,0,11,1,2,0,0
+outro,0,3,1,0,1,0,0,0,1

@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Segredos e dados (nunca versionar)
+.env
+data/
+
+# outputs/: só versionamos resultados agregados (sem texto de review — licença do dataset não especificada)
+outputs/*
+!outputs/data_prep_report.json
+!outputs/avaliacao/
+outputs/avaliacao/*
+!outputs/avaliacao/comparativo_*
+!outputs/avaliacao/confusao_*
+.pytest_cache/
