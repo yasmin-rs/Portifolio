@@ -8,6 +8,7 @@ Saídas em outputs/dashboard/ (estas VÃO para o git e para o demo):
     reviews.parquet   uma linha por review analisada — SEM o texto original da review
     lojas.parquet     uma linha por loja, com indicadores da base completa (sem IA)
     qualidade.csv     comparativo das versões de prompt (da avaliação)
+    modelos.csv       comparativo modelo local x API (se comparar_modelos.py já rodou)
     meta.json         de onde vieram os dados, modelo, versões, custo
 """
 import argparse
@@ -18,6 +19,7 @@ from datetime import datetime
 import pandas as pd
 
 from ifood import config
+from ifood.avaliar_prompts import nome_arquivo_modelo
 
 PASTA_AGENTES = config.OUTPUTS_DIR / "agentes"
 PASTA_DASHBOARD = config.OUTPUTS_DIR / "dashboard"
@@ -34,9 +36,13 @@ COLUNAS_REVIEWS = [
 
 def escolher_arquivo_resultados() -> str:
     """Prefere resultados da amostra; senão o do gabarito. Ignora testes com --limite."""
-    candidatos = [p for p in PASTA_AGENTES.glob("resultados_*.csv") if "_limite" not in p.name]
+    excluir = ("_limite", "_parcial", "_classificacao")  # testes, lotes interrompidos e só-classificação
+    candidatos = [p for p in PASTA_AGENTES.glob("resultados_*.csv") if not any(x in p.name for x in excluir)]
     if not candidatos:
         raise FileNotFoundError("Nenhum resultado de agentes. Rode: uv run python -m ifood.agentes")
+    # se houver resultados de vários modelos, fica com o do MODEL_NAME (os outros são comparação)
+    do_modelo = [p for p in candidatos if nome_arquivo_modelo(config.env("MODEL_NAME", "")) in p.name]
+    candidatos = do_modelo or candidatos
     candidatos.sort(key=lambda p: ("_amostra_" in p.name, len(pd.read_csv(p, usecols=["review_id"]))))
     return str(candidatos[-1])
 
@@ -90,6 +96,9 @@ def principal() -> None:
     comparativos = [c for c in comparativos if "_limite" not in c.name]
     if comparativos:
         pd.concat(pd.read_csv(c) for c in comparativos).to_csv(PASTA_DASHBOARD / "qualidade.csv", index=False)
+    modelos = config.OUTPUTS_DIR / "avaliacao" / "comparativo_modelos.csv"
+    if modelos.exists():  # comparação local x API (comparar_modelos.py)
+        pd.read_csv(modelos).to_csv(PASTA_DASHBOARD / "modelos.csv", index=False)
 
     custos = reviews["custo_usd"]
     meta = {

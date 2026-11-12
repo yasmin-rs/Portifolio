@@ -120,7 +120,11 @@ def processar_arquivo(caminho: Path, assumir_sim: bool = False, modelo: str | No
     ARQUIVO_RESULTADOS.parent.mkdir(parents=True, exist_ok=True)
     with ARQUIVO_RESULTADOS.open("a", encoding="utf-8") as saida:
         for linha in df.to_dict("records"):
-            resultado = agentes.processar_review(linha["review"], modelo)
+            try:
+                resultado = agentes.processar_review(linha["review"], modelo)
+            except llm.CotaEsgotada as e:
+                print(f"  ! {e} O arquivo continua na inbox.")
+                return None
             registro = {"momento": agora(), "arquivo": caminho.name,
                         **{k: v for k, v in linha.items() if k != "review"}, **resultado}
             saida.write(json.dumps(registro, ensure_ascii=False, default=str) + "\n")

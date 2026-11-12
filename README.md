@@ -2,7 +2,7 @@
 
 **Agentes de IA que leem avaliações de restaurantes, entendem o problema, decidem o que fazer e respondem ao cliente, e que sempre passam os casos graves para uma pessoa.**
 
-🔗 **Demo ao vivo:** [LINK_DO_APP_STREAMLIT] https://central-reviews-ai.streamlit.app/· 🎥 **Vídeo de 2 min:** [LINK_DO_VIDEO](LINK_DO_VIDEO)
+🔗 **Demo ao vivo:** [central-reviews-ai.streamlit.app](https://central-reviews-ai.streamlit.app/) · 🎥 **Vídeo de 2 min:** [LINK_DO_VIDEO](LINK_DO_VIDEO)
 
 Construído do zero em ~2 dias (11 e 12/11/2026), de ponta a ponta: dados → prompts avaliados → agentes → automação → dashboard publicado.
 
@@ -77,14 +77,39 @@ Rotulei um gabarito de 50 reviews (10 por nota) e testei 4 versões do prompt de
 
 O dado mais importante da tabela é outro: **o modelo deixou passar um dos 2 casos graves** do gabarito (uma mosca no suco) em todas as versões a partir da v2. Por isso a segurança não depende do modelo: a regra em código pega os 2.
 
+## Modelo local × nuvem
+
+Mesmo gabarito, mesmos prompts, mesma métrica ([`comparar_modelos.py`](src/ifood/comparar_modelos.py)). Para trocar de modelo, bastou mudar uma linha do `.env`:
+
+| Modelo | Prompt | Tema | Gravidade | Graves detectados | Latência (mediana) | Custo por 1.000 reviews* |
+|---|---|---|---|---|---|---|
+| `qwen2.5:7b` (local, CPU) | v2 | 80% | 90% | 1/2 | 22 s | US$ 0 |
+| `qwen2.5:7b` (local, CPU) | v4 | 76% | 96% | 1/2 | 22 s | US$ 0 |
+| `gemini-3.5-flash-lite` (API) | v2 | 94% | 82% | 1/2 | 1,7 s | US$ 0,33 |
+| **`gemini-3.5-flash-lite` (API)** | **v4** | **96%** | **94%** | **2/2** | **1,7 s** | **US$ 0,51** |
+
+\* Pelo preço do plano pago. A rodada foi feita no plano gratuito, então o custo real foi US$ 0.
+
+**Isso é estatisticamente confiável?** Com 50 reviews, parte disso sim e parte não:
+- ✅ **O Gemini acerta mais o tema que o modelo local.** Nas mesmas reviews, ele acertou 9 que o local errou, contra 1 no sentido oposto (teste de McNemar, p = 0,02).
+- ❌ **v4 × v2 no Gemini (96% × 94%) é empate:** a diferença é 1 review.
+- ❌ **"2/2 graves" não prova nada:** o gabarito só tem 2 casos graves.
+- Cada acurácia tem margem larga: o local fica entre 67% e 89%, e o Gemini entre 87% e 99% (IC 95%).
+
+**O que aprendi com isso:**
+- **Melhorar o prompt teve efeito diferente em cada modelo.** As regras extras da v4 não ajudaram o modelo pequeno. No Gemini, a v4 empatou no tema e foi melhor na gravidade (94% × 82%). Para saber se esse ganho é real, preciso de um gabarito maior, e esse é o próximo passo.
+- **A troca é de negócio, não só técnica.** O modelo local é grátis e privado, mas 13× mais lento. A API custa ~US$ 0,50 por mil reviews: menos de um centavo por review, com 1,7 s de resposta.
+- **A trava de segurança continua.** Mesmo com 2/2 no gabarito, um caso grave perdido custa muito mais que a regra em código.
+- **Cuidado:** o gabarito foi rotulado com auxílio de LLM, o que pode favorecer modelos maiores. Os números servem para comparar opções, não como acurácia absoluta.
+
 ## Decisões de projeto
 
 - **Custo sob controle desde o início.** Nada roda no dataset inteiro sem pedido explícito. Todo script que chama modelo mostra antes a estimativa (chamadas × tokens × preço) e pede confirmação se o modelo for pago. Cache em disco: rodar de novo não custa nada e uma execução interrompida retoma de onde parou.
-- **Uma porta só para os modelos.** Todas as chamadas passam por uma função ([`llm.py`](src/ifood/llm.py)) com [litellm](https://github.com/BerriAI/litellm). Trocar o Ollama local por Claude (API) é só mudar o `.env`; nenhum nome de modelo está no código.
+- **Uma porta só para os modelos.** Todas as chamadas passam por uma função ([`llm.py`](src/ifood/llm.py)) com [litellm](https://github.com/BerriAI/litellm). Trocar o Ollama local por Gemini ou Claude (API) é só mudar o `.env`; nenhum nome de modelo está no código.
 - **Toda chamada fica registrada.** Modelo, tokens, custo, latência, falhas de JSON e erros vão para `outputs/runs.jsonl`.
 - **Humano no circuito onde importa.** O sistema automatiza o volume e deixa para a pessoa a decisão de risco.
 - **IA só onde ela é melhor.** Limpeza, deduplicação, amostragem, regra de segurança e as perguntas do dashboard são pandas e regras, que são mais baratas, previsíveis e testáveis.
-- **Testes sem custo.** 40 testes com um modelo falso (`uv run pytest`).
+- **Testes sem custo.** 42 testes com um modelo falso (`uv run pytest`).
 
 ## O que deu errado (e como resolvi)
 
@@ -98,7 +123,9 @@ O dado mais importante da tabela é outro: **o modelo deixou passar um dos 2 cas
 ## Limitações e próximos passos
 
 - O gabarito tem 50 reviews e foi rotulado **com auxílio de LLM**, então serve para comparar versões de prompt, mas é pequeno para afirmar acurácia absoluta.
-- Comparação **modelo local × API (Claude)**: o script está pronto ([`comparar_modelos.py`](src/ifood/comparar_modelos.py)) e a rodada fica para a próxima etapa. *[RESULTADO_COMPARACAO]*
+- Ampliar o gabarito para ~150 reviews, com mais casos graves, para que as diferenças entre prompts e modelos tenham significância estatística.
+- Rodar os 4 agentes nas 500 reviews com o modelo da API, para comparar o pipeline inteiro e não só a classificação.
+- Incluir um terceiro fornecedor (Claude) na comparação: o script já aceita vários modelos.
 - Modo incremental, para ampliar a amostra aos poucos sem reprocessar o que já foi analisado.
 
 ## Como rodar

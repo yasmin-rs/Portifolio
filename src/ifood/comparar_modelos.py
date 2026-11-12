@@ -5,6 +5,7 @@ Uso:
     uv run python -m ifood.comparar_modelos --versoes v2
 
 Os modelos vêm do .env (MODEL_NAME e COMPARE_MODEL_NAME) — nenhum nome no código.
+COMPARE_MODEL_NAME aceita vários, separados por vírgula (ex.: um Gemini e um Claude).
 Se um modelo já foi avaliado (outputs/avaliacao/predicoes_<modelo>.csv), reaproveita
 as predições em vez de chamar de novo (o local leva ~20 min por versão em CPU).
 Antes de chamar um modelo pago, mostra a estimativa de custo e pede confirmação.
@@ -50,8 +51,10 @@ def principal() -> None:
     parser.add_argument("--sim", action="store_true", help="não pedir confirmação de custo")
     args = parser.parse_args()
 
-    modelos = [config.env("MODEL_NAME"), config.env("COMPARE_MODEL_NAME")]
-    if not all(modelos):
+    # COMPARE_MODEL_NAME aceita vários modelos separados por vírgula
+    extras = [m.strip() for m in config.env("COMPARE_MODEL_NAME", "").split(",") if m.strip()]
+    modelos = [config.env("MODEL_NAME")] + extras
+    if not modelos[0] or not extras:
         raise SystemExit("Defina MODEL_NAME e COMPARE_MODEL_NAME no .env (veja .env.example).")
     gabarito = carregar_gabarito()
 

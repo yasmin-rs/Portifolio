@@ -64,6 +64,35 @@ def suporta_modo_json(modelo: str) -> bool:
         return False
 
 
+_MODELOS_SEM_TEMPERATURA: set[str] = set()  # aprendido em tempo de execução
+
+
+class CotaEsgotada(RuntimeError):
+    """A cota DIÁRIA do provedor acabou: insistir não adianta, o lote deve parar.
+
+    É a única falha que `chamar_modelo()` deixa subir como exceção. Sem isso, cada
+    review seguinte falharia e seria escalada para um humano por erro técnico.
+    """
+
+
+def eh_cota_diaria(erro: Exception) -> bool:
+    texto = str(erro).lower()
+    return "429" in texto and ("perday" in texto or "per day" in texto or "daily" in texto)
+
+
+def _completar(conversa: list[dict], parametros: dict):
+    """litellm.completion; se o modelo recusar `temperature` (alguns modelos novos
+    só aceitam o padrão), tenta de novo sem ele e lembra disso no resto da execução."""
+    try:
+        return litellm.completion(messages=conversa, **parametros)
+    except Exception as e:
+        if "temperature" not in parametros or "temperature" not in str(e).lower():
+            raise
+        _MODELOS_SEM_TEMPERATURA.add(parametros["model"])
+        parametros.pop("temperature")
+        return litellm.completion(messages=conversa, **parametros)
+
+
 # ---------------------------------------------------------------- resultado
 @dataclass
 class ResultadoChamada:
@@ -174,8 +203,11 @@ def chamar_modelo(
         "model": cfg["modelo"], "temperature": cfg["temperatura"], "max_tokens": cfg["max_tokens"],
         "timeout": cfg["timeout"], "num_retries": cfg["retries_rede"],
     }
-    if cfg["api_base"]:
+    # API_BASE aponta para o Ollama: só vale para modelo local (senão a API na nuvem iria para localhost)
+    if cfg["api_base"] and eh_modelo_local(cfg["modelo"]):
         parametros["api_base"] = cfg["api_base"]
+    if cfg["modelo"] in _MODELOS_SEM_TEMPERATURA:
+        parametros.pop("temperature")
     if schema and suporta_modo_json(cfg["modelo"]):
         parametros["response_format"] = {"type": "json_object"}
 
@@ -184,7 +216,7 @@ def chamar_modelo(
     custo_total: float | None = 0.0
     try:
         for _tentativa in range(cfg["max_retries_json"] + 1):
-            resposta = litellm.completion(messages=conversa, **parametros)
+            resposta = _completar(conversa, parametros)
             texto = resposta.choices[0].message.content or ""
             uso = getattr(resposta, "usage", None)
             resultado.tokens_entrada += getattr(uso, "prompt_tokens", 0) or 0
@@ -212,6 +244,11 @@ def chamar_modelo(
                 ]
     except Exception as e:  # rede, autenticação, timeout, limite de taxa...
         resultado.erro = f"{type(e).__name__}: {str(e)[:300]}"
+        if eh_cota_diaria(e):
+            resultado.latencia_s = round(time.perf_counter() - inicio, 3)
+            _registrar(resultado)
+            raise CotaEsgotada(f"Cota diária de {cfg['modelo']} esgotada. O que já foi feito está no "
+                               "cache: rode de novo depois que a cota renovar.") from e
 
     resultado.latencia_s = round(time.perf_counter() - inicio, 3)
     resultado.custo_usd = custo_total

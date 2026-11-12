@@ -67,7 +67,7 @@ def classificar_gabarito(versao: str, gabarito: pd.DataFrame, modelo: str | None
 
 
 def calcular_metricas(pred: pd.DataFrame) -> dict:
-    novas = pred[~pred["do_cache"]]
+    novas = pred[~pred["do_cache"].astype(bool)]  # astype: após concat com tabela vazia a coluna vira texto
     respostas = novas["falhas_json"].sum() + novas["ok"].sum()
     com_grav = pred[pred["gravidade_gabarito"].notna()]
     altas = pred[pred["gravidade_gabarito"] == "alta"]

@@ -93,3 +93,33 @@ def test_regra_de_seguranca_detecta(texto, categoria):
 @pytest.mark.parametrize("texto", ["great hospitality", "Mac attack Thursdays", "feel free", "sick of waiting? no"])
 def test_regra_de_seguranca_sem_falso_positivo(texto):
     assert verificar_seguranca(texto) == []
+
+
+def test_lote_para_quando_cota_diaria_acaba(monkeypatch):
+    import pandas as pd
+    from ifood import agentes, llm
+    feitos = []
+
+    def falso(texto, modelo=None):
+        if len(feitos) == 2:
+            raise llm.CotaEsgotada("acabou")
+        feitos.append(texto)
+        return {"status": "ignorado", "trava_aplicada": False, "chamadas_novas": 1}
+
+    monkeypatch.setattr(agentes, "processar_review", falso)
+    df = pd.DataFrame({"review_id": [1, 2, 3, 4], "review": ["a", "b", "c", "d"]})
+    resultado = agentes.processar_lote(df)
+    assert len(resultado) == 2  # parou na 3ª, sem escalar as restantes por erro
+
+
+def test_so_classificar_faz_uma_chamada_e_mantem_a_trava(falsos):
+    falsos["agente_classificador"] = [resultado(CLASSIF_MEDIA)]  # sem decisor/redator/revisor: se chamar, quebra
+    s = agentes.classificar_review("Slow service and a fruit fly in my orange juice.")
+    assert s["n_chamadas"] == 1 and s["status"] == "classificado"
+    assert s["gravidade"] == "alta" and s["trava_aplicada"]
+
+
+def test_so_classificar_falha_nao_vira_escalado(falsos):
+    falsos["agente_classificador"] = [resultado(None, ok=False)]
+    s = agentes.classificar_review("Waited 30 minutes in line.")
+    assert s["status"] == "falha_classificacao" and s["tema"] is None

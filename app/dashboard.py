@@ -79,11 +79,13 @@ def carregar():
     meta = json.loads((PASTA_DADOS / "meta.json").read_text(encoding="utf-8"))
     caminho_q = PASTA_DADOS / "qualidade.csv"
     qualidade = pd.read_csv(caminho_q) if caminho_q.exists() else pd.DataFrame()
+    caminho_m = PASTA_DADOS / "modelos.csv"
+    modelos = pd.read_csv(caminho_m) if caminho_m.exists() else pd.DataFrame()
     reviews["tema_rotulo"] = reviews["tema"].map(ROTULOS_TEMAS).fillna("Sem classificação")
     reviews["gravidade_rotulo"] = reviews["gravidade"].map(ROTULOS_GRAVIDADE)
     reviews["status_rotulo"] = reviews["status"].map(ROTULOS_STATUS)
     reviews["tem_problema"] = reviews["tema"].notna() & reviews["tema"].ne("elogio_sem_problema")
-    return reviews, lojas, meta, qualidade
+    return reviews, lojas, meta, qualidade, modelos
 
 
 def configuracao(nome: str, padrao: str = "") -> str:
@@ -156,7 +158,7 @@ def mapa_de_calor(reviews: pd.DataFrame, max_cidades: int = 12) -> alt.Chart:
 
 
 # ---------------------------------------------------------------- dados + filtros
-reviews_todas, lojas, meta, qualidade = carregar()
+reviews_todas, lojas, meta, qualidade, modelos = carregar()
 
 f1, f2, f3 = st.columns([1, 2, 1])
 estados = f1.multiselect("Estado", sorted(reviews_todas["state"].dropna().unique()))
@@ -519,6 +521,44 @@ with aba_ia:
         st.caption(f"Laranja = versão em uso no pipeline ({meta['prompt_classificador']}). Modelo: `{q['modelo'].iloc[0]}`.")
         with st.expander("Ver tabela completa"):
             st.dataframe(qualidade, hide_index=True, width="stretch")
+
+    if not modelos.empty:
+        st.subheader("Modelo local × nuvem")
+        st.markdown("Mesmo gabarito, mesmos prompts. Para trocar de modelo, bastou mudar uma linha de configuração.")
+        m = modelos.copy()
+        m["nome"] = m["modelo"].map(lambda x: x.split("/")[-1] + (" (local)" if x.startswith("ollama") else " (API)"))
+        m["config"] = m["nome"] + " · " + m["versao"]
+        # uma cor fixa por modelo (paleta categórica, na ordem)
+        nomes = list(dict.fromkeys(m["nome"]))
+        cor_modelo = alt.Color("nome:N", title="Modelo", legend=alt.Legend(orient="bottom"),
+                               scale=alt.Scale(domain=nomes, range=["#2a78d6", "#eda100", "#1baf7a", "#6250d6"][:len(nomes)]))
+        c1, c2, c3 = st.columns(3)
+        for col, (campo, titulo) in zip([c1, c2], [("acuracia_tema", "Acurácia de tema"),
+                                                   ("acuracia_gravidade", "Acurácia de gravidade")]):
+            base = alt.Chart(m).encode(
+                y=alt.Y("config:N", title=None, sort=list(m["config"]), axis=alt.Axis(labelLimit=260)),
+                x=alt.X(f"{campo}:Q", title=None, scale=alt.Scale(domain=[0, 1]), axis=alt.Axis(format=".0%", tickCount=4)),
+                tooltip=[alt.Tooltip("nome:N", title="Modelo"), alt.Tooltip("versao:N", title="Prompt"),
+                         alt.Tooltip(f"{campo}:Q", format=".0%", title=titulo)])
+            graf = base.mark_bar(cornerRadiusEnd=4, height=20).encode(color=cor_modelo) + \
+                base.mark_text(align="left", dx=4, fontWeight=600).encode(text=alt.Text(f"{campo}:Q", format=".0%"))
+            col.markdown(f"**{titulo}**")
+            col.altair_chart(graf.properties(height=40 * len(m) + 30), width="stretch")
+        rapido = m.loc[m["latencia_mediana_s"].idxmin()]
+        lento = m.loc[m["latencia_mediana_s"].idxmax()]
+        c3.markdown(f"""<div class="card"><div class="tag">Velocidade × custo</div>
+            <div class="big">{lento['latencia_mediana_s'] / rapido['latencia_mediana_s']:.0f}× mais rápido</div>
+            <div class="sub">{rapido['nome']}: {num_br(rapido['latencia_mediana_s'], 1)} s por review, contra
+            {num_br(lento['latencia_mediana_s'])} s do {lento['nome']}. Custo na API: ~US$
+            {num_br(m['custo_por_1000_reviews_usd'].max(), 2)} por 1.000 reviews (preço do plano pago).</div></div>""",
+                    unsafe_allow_html=True)
+        st.markdown('<div class="aviso">📏 <b>Leia com cautela:</b> o gabarito tem 50 reviews. A vantagem da API '
+                    'no tema é estatisticamente significativa (teste de McNemar, p = 0,02), mas diferenças de 1 a 2 '
+                    'reviews entre versões de prompt são empate. O gabarito tem só 2 casos graves, então "2/2" não '
+                    'prova nada: a regra de segurança em código continua valendo para qualquer modelo.</div>',
+                    unsafe_allow_html=True)
+        with st.expander("Ver tabela completa"):
+            st.dataframe(modelos, hide_index=True, width="stretch")
     st.markdown(f"""
 - **Agentes:** classificador → regra de segurança (código) → decisor → redator → revisor.
 - **Modelo desta análise:** `{meta['modelo']}` · **chamadas:** {meta['chamadas_llm']} ·

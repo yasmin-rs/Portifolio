@@ -79,3 +79,34 @@ def test_modelo_pago_pede_confirmacao(monkeypatch):
     assert llm.confirmar_execucao(estimativa) is False
     monkeypatch.setattr("builtins.input", lambda _: "s")
     assert llm.confirmar_execucao(estimativa) is True
+
+
+def test_api_base_do_ollama_nao_vai_para_modelo_na_nuvem(ambiente, monkeypatch):
+    monkeypatch.setenv("API_BASE", "http://localhost:11434")
+    chamadas = fila_de_respostas(monkeypatch, [VALIDO, VALIDO])
+    llm.chamar_modelo("sys", "review", Classificacao, usar_cache=False)
+    llm.chamar_modelo("sys", "review", Classificacao, modelo="gemini/modelo-teste", usar_cache=False)
+    assert chamadas[0]["api_base"] == "http://localhost:11434"
+    assert "api_base" not in chamadas[1]
+
+
+def test_modelo_que_recusa_temperature_tenta_de_novo_sem(ambiente, monkeypatch):
+    monkeypatch.setattr(llm, "_MODELOS_SEM_TEMPERATURA", set())
+    chamadas = fila_de_respostas(monkeypatch, [ValueError("temperature is not supported"), VALIDO, VALIDO])
+    assert llm.chamar_modelo("sys", "a", Classificacao, modelo="nuvem/x", usar_cache=False).ok
+    assert "temperature" in chamadas[0] and "temperature" not in chamadas[1]
+    llm.chamar_modelo("sys", "b", Classificacao, modelo="nuvem/x", usar_cache=False)
+    assert "temperature" not in chamadas[2]  # lembrou na chamada seguinte
+
+
+def test_cota_diaria_esgotada_para_o_lote(ambiente, monkeypatch):
+    erro = RuntimeError('429 quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier"')
+    fila_de_respostas(monkeypatch, [erro])
+    with pytest.raises(llm.CotaEsgotada):
+        llm.chamar_modelo("sys", "review", Classificacao, modelo="nuvem/x", usar_cache=False)
+
+
+def test_limite_por_minuto_nao_para_o_lote(ambiente, monkeypatch):
+    fila_de_respostas(monkeypatch, [RuntimeError("429 rate limit per minute")])
+    r = llm.chamar_modelo("sys", "review", Classificacao, modelo="nuvem/x", usar_cache=False)
+    assert not r.ok and "429" in r.erro

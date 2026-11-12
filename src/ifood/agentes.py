@@ -16,6 +16,8 @@ Status final: ignorado | resposta_enviada (simulado) | escalado_para_humano
 Uso em lote:
     uv run python -m ifood.agentes --fonte gabarito              # 50 reviews rotuladas
     uv run python -m ifood.agentes --fonte amostra --limite 100  # parte da amostra
+    uv run python -m ifood.agentes --fonte amostra --so-classificar --modelo gemini/gemini-3.5-flash-lite
+                                                                 # só classificação (comparar modelos)
 """
 import argparse
 import json
@@ -173,6 +175,25 @@ def processar_review(review: str, modelo: str | None = None) -> dict:
     return _finalizar(saida, chamadas)
 
 
+def classificar_review(review: str, modelo: str | None = None) -> dict:
+    """Só a etapa (a): classificador + regra de segurança. 1 chamada por review.
+
+    Serve para comparar modelos numa amostra grande gastando ~1/3.5 das chamadas do pipeline.
+    """
+    r = agente_classificador(review, modelo)
+    alertas = verificar_seguranca(review)
+    saida = {"alertas_seguranca": alertas, "trava_aplicada": False}
+    if not r.ok:
+        saida.update(tema=None, sentimento=None, gravidade=None, resumo=None, status="falha_classificacao")
+        return _finalizar(saida, [r])
+    classificacao = dict(r.dados)
+    if alertas and classificacao["gravidade"] != "alta":
+        classificacao["gravidade"] = "alta"
+        saida["trava_aplicada"] = True
+    saida.update(classificacao, status="classificado")
+    return _finalizar(saida, [r])
+
+
 def _finalizar(saida: dict, chamadas: list[llm.ResultadoChamada]) -> dict:
     custos = [c.custo_usd for c in chamadas]
     saida["n_chamadas"] = len(chamadas)
@@ -187,9 +208,12 @@ def _finalizar(saida: dict, chamadas: list[llm.ResultadoChamada]) -> dict:
 CHAMADAS_MEDIAS_POR_REVIEW = 3.5  # classif + decisor + (redator + revisor) na maioria + reescritas
 
 
-def estimar_lote(reviews: list[str], modelo: str | None = None) -> dict:
-    """Estimativa conservadora: usa o prompt mais longo dos 4 agentes."""
-    prompts = [carregar_prompt("classificacao", versao_classificador()), carregar_prompt("decisor", VERSAO_DECISOR),
+def estimar_lote(reviews: list[str], modelo: str | None = None, so_classificar: bool = False) -> dict:
+    """Estimativa conservadora: usa o prompt mais longo dos 4 agentes (ou só o do classificador)."""
+    if so_classificar:
+        prompt = carregar_prompt("classificacao", versao_classificador())
+        return llm.estimar_custo(len(reviews), llm.estimar_tokens_entrada(prompt, reviews, modelo), 120, modelo)
+    prompts =[carregar_prompt("classificacao", versao_classificador()), carregar_prompt("decisor", VERSAO_DECISOR),
                carregar_prompt("redator", VERSAO_REDATOR), carregar_prompt("revisor", VERSAO_REVISOR)]
     tokens = max(llm.estimar_tokens_entrada(p, reviews, modelo) for p in prompts) + 120  # + JSON de contexto
     n = round(len(reviews) * CHAMADAS_MEDIAS_POR_REVIEW)
@@ -206,10 +230,15 @@ def carregar_fonte(fonte: str) -> pd.DataFrame:
     raise ValueError("fonte deve ser 'gabarito' ou 'amostra'")
 
 
-def processar_lote(df: pd.DataFrame, modelo: str | None = None) -> pd.DataFrame:
+def processar_lote(df: pd.DataFrame, modelo: str | None = None, so_classificar: bool = False) -> pd.DataFrame:
+    processar = classificar_review if so_classificar else processar_review
     linhas = []
     for i, item in enumerate(df.itertuples(), start=1):
-        resultado = processar_review(item.review, modelo)
+        try:
+            resultado = processar(item.review, modelo)
+        except llm.CotaEsgotada as e:
+            print(f"\n!!! Parado na review {i}/{len(df)}: {e}", flush=True)
+            break
         base = {c: getattr(item, c) for c in ("review_id", "store_id", "store_label", "city", "state",
                                                "latitude", "longitude", "rating_num", "review",
                                                "tema_gabarito", "gravidade_gabarito") if hasattr(item, c)}
@@ -226,21 +255,30 @@ def principal() -> None:
     parser.add_argument("--limite", type=int, help="processar só as N primeiras reviews")
     parser.add_argument("--modelo", help="sobrescreve MODEL_NAME do .env")
     parser.add_argument("--sim", action="store_true", help="não pedir confirmação")
+    parser.add_argument("--so-classificar", action="store_true",
+                        help="só classificador + regra de segurança (1 chamada/review), para comparar modelos")
     args = parser.parse_args()
 
     df = carregar_fonte(args.fonte)
     if args.limite:
         df = df.head(args.limite)
-    if not llm.confirmar_execucao(estimar_lote(df["review"].tolist(), args.modelo), assumir_sim=args.sim):
+    estimativa = estimar_lote(df["review"].tolist(), args.modelo, args.so_classificar)
+    if not llm.confirmar_execucao(estimativa, assumir_sim=args.sim):
         print("Cancelado.")
         return
 
-    print(f"\nProcessando {len(df)} reviews (classificador {versao_classificador()})...")
-    resultado = processar_lote(df, args.modelo)
+    modo = "só classificação" if args.so_classificar else "4 agentes"
+    print(f"\nProcessando {len(df)} reviews ({modo}, classificador {versao_classificador()})...")
+    resultado = processar_lote(df, args.modelo, args.so_classificar)
 
     PASTA_SAIDA.mkdir(parents=True, exist_ok=True)
     nome_modelo = nome_arquivo_modelo(llm.configuracao_modelo(args.modelo)["modelo"])
     sufixo = f"{args.fonte}_{nome_modelo}" + (f"_limite{args.limite}" if args.limite else "")
+    if args.so_classificar:
+        sufixo += "_classificacao"
+    if len(resultado) < len(df):  # lote interrompido: salva à parte para não parecer completo
+        sufixo += "_parcial"
+        print(f"Resultado PARCIAL ({len(resultado)}/{len(df)}). Rode o mesmo comando depois: o cache retoma.")
     resultado.to_json(PASTA_SAIDA / f"resultados_{sufixo}.jsonl", orient="records", lines=True, force_ascii=False)
     resultado.to_csv(PASTA_SAIDA / f"resultados_{sufixo}.csv", index=False, encoding="utf-8")
 

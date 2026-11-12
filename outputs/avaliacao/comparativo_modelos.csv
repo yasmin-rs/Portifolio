@@ -1,0 +1,5 @@
+modelo,versao,n,acuracia_tema,acuracia_gravidade,recall_gravidade_alta,concordancia_sent_nota,taxa_json_invalido,chamadas_falhas,latencia_mediana_s,tokens_entrada_medio,custo_usd,custo_por_1000_reviews_usd
+ollama/qwen2.5:7b,v2,50,0.8,0.9,1/2,0.72,0.0,0,22.16,782,0.0,0.0
+ollama/qwen2.5:7b,v4,50,0.76,0.96,1/2,0.72,0.0,0,22.07,1437,0.0,0.0
+gemini/gemini-3.5-flash-lite,v2,50,0.94,0.82,1/2,0.72,0.0,0,1.68,700,0.0166,0.33
+gemini/gemini-3.5-flash-lite,v4,50,0.96,0.94,2/2,0.74,0.0,0,1.66,1301,0.0253,0.51
