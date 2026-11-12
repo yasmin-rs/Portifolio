@@ -1,0 +1,11 @@
+{
+  "gerado_em": "2026-11-12T08:51",
+  "fonte": "resultados_amostra_ollama-qwen2.5-7b.csv",
+  "reviews_analisadas": 500,
+  "lojas_na_base": 40,
+  "reviews_na_base": 23287,
+  "modelo": "ollama/qwen2.5:7b",
+  "prompt_classificador": "v2",
+  "chamadas_llm": 2002,
+  "custo_total_usd": 0.0
+}

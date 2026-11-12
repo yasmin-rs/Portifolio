@@ -16,6 +16,7 @@ data/
 # outputs/: só versionamos resultados agregados (sem texto de review — licença do dataset não especificada)
 outputs/*
 !outputs/data_prep_report.json
+!outputs/dashboard/
 !outputs/avaliacao/
 outputs/avaliacao/*
 !outputs/avaliacao/comparativo_*
