@@ -228,6 +228,31 @@ d4.markdown(f"""<div class="card"><div class="tag">Custo da análise</div>
             unsafe_allow_html=True)
 st.write("")
 
+# ---------------------------------------------------------------- impacto: horas economizadas
+# Estimativa, não medição: a premissa (minutos por review) fica visível e ajustável.
+# Sem IA, uma pessoa trata TODAS as reviews; com IA, só as escaladas continuam com humano.
+h1, h2 = st.columns([3, 1], gap="large")
+minutos = h2.slider("Premissa: minutos de trabalho manual por review", 1, 10, 3,
+                    help="Ler, classificar, decidir o que fazer e escrever a resposta.")
+horas_sem_ia = n * minutos / 60
+horas_com_ia = escaladas * minutos / 60
+economia = horas_sem_ia - horas_com_ia
+
+
+def num_br(x: float, casas: int = 0) -> str:
+    """1234.5 -> '1.234,5' (formato brasileiro)."""
+    return f"{x:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+h1.markdown(f"""<div class="card" style="border-left: 5px solid #1baf7a">
+    <div class="tag">Horas economizadas (estimativa)</div>
+    <div class="big">≈ {num_br(economia)} h de {num_br(horas_sem_ia)} h · {pct(economia / horas_sem_ia)} do trabalho manual</div>
+    <div class="sub">Sem IA: {num_br(n)} reviews × {minutos} min = {num_br(horas_sem_ia, 1)} h de uma pessoa.
+    Com IA: só as {escaladas} escaladas ainda passam por alguém ({num_br(horas_com_ia, 1)} h).
+    O resto é triado e respondido sem ninguém operando.</div></div>""",
+            unsafe_allow_html=True)
+st.write("")
+
 aba_geral, aba_agentes, aba_mapa, aba_ranking, aba_fila, aba_pergunta, aba_ia = st.tabs(
     ["📊 Visão geral", "🤖 Por dentro dos agentes", "🗺️ Mapa", "🏆 Lojas e cidades", "🚨 Casos escalados",
      "💬 Pergunte aos dados", "🧪 Qualidade da IA"])
