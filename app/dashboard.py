@@ -22,13 +22,16 @@ PASTA_DADOS = Path(__file__).resolve().parents[1] / "outputs" / "dashboard"
 MIN_REVIEWS_PADRAO = 3  # abaixo disso o percentual de uma loja é instável (1 review = 0% ou 100%)
 
 # ---------------------------------------------------------------- identidade visual
-# Cada tema tem UMA cor fixa em todo o dashboard (paleta categórica validada para daltonismo,
-# na ordem validada). "Elogio" é ausência de problema -> cinza neutro.
+# Tema visual vermelho: cada tema de reclamação tem UMA cor fixa em todo o dashboard, em tons quentes
+# com claridades diferentes para continuar distinguível. "Elogio" é ausência de problema -> cinza neutro.
 CORES_TEMA = {
-    "atendimento": "#2a78d6", "demora": "#eb6834", "limpeza": "#1baf7a", "comida_errada_ou_fria": "#eda100",
-    "preco": "#e87ba4", "pedido_incorreto": "#008300", "outro": "#6250d6", "elogio_sem_problema": "#a3a29c",
+    "atendimento": "#da291c", "demora": "#f08a1c", "limpeza": "#ffbc0d", "comida_errada_ou_fria": "#8f1810",
+    "preco": "#f4a3a8", "pedido_incorreto": "#b45309", "outro": "#6b3a32", "elogio_sem_problema": "#a3a29c",
 }
 # Gravidade é um estado -> paleta de status, sempre com rótulo em texto.
+# paleta dos gráficos: vermelho, amarelo e laranja
+VERMELHO, AMARELO, LARANJA = "#da291c", "#ffbc0d", "#f08a1c"
+RAMPA_QUENTE = ["#fff3c4", "#ffbc0d", "#f08a1c", "#da291c", "#8f1810"]  # pouco -> muito
 CORES_GRAVIDADE = {"baixa": "#fab219", "media": "#ec835a", "alta": "#d03b3b"}
 ROTULOS_GRAVIDADE = {"baixa": "Baixa", "media": "Média", "alta": "Alta"}
 ROTULOS_STATUS = {"resposta_enviada": "Resposta enviada", "escalado_para_humano": "Escalado ao gerente",
@@ -50,14 +53,14 @@ html, body, [class*="css"], .stMarkdown, .stText { font-family: 'Inter', sans-se
 [data-testid="InputInstructions"] > span:first-child::after { content: "Enter para aplicar"; font-size: 0.75rem; }
 h1, h2, h3, .hero h1, .card .big { font-family: 'Space Grotesk', sans-serif !important; letter-spacing: -0.01em; }
 .block-container { padding-top: 1.6rem; }
-.hero { background: linear-gradient(120deg, #0d1b2a 0%, #16304f 55%, #3a1f4f 100%); color: #f4f3ef;
+.hero { background: linear-gradient(120deg, #4a0707 0%, #8f1810 45%, #da291c 100%); color: #fff4f2;
         border-radius: 18px; padding: 28px 32px 22px; margin-bottom: 1rem; }
 .hero h1 { color: #ffffff; font-size: 2.1rem; margin: 0 0 4px; }
-.hero p { color: #c9c8c2; margin: 0 0 18px; font-size: .95rem; }
+.hero p { color: #fde0dc; margin: 0 0 18px; font-size: .95rem; }
 .hero .nums { display: flex; flex-wrap: wrap; gap: 34px; }
 .hero .num { font-family: 'Space Grotesk', sans-serif; font-size: 2.3rem; font-weight: 700; color: #fff; line-height: 1; }
-.hero .lbl { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: #a9b4c4; margin-top: 6px; }
-.hero .accent { color: #ff9a6b; }
+.hero .lbl { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: #f8c6bf; margin-top: 6px; }
+.hero .accent { color: #ffbc0d; }
 .card { background: #fff; border: 1px solid #e7e5df; border-radius: 14px; padding: 16px 18px; height: 100%;
         box-shadow: 0 1px 2px rgba(0,0,0,.04); }
 .card .tag { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: #6d6c66; }
@@ -72,6 +75,22 @@ h1, h2, h3, .hero h1, .card .big { font-family: 'Space Grotesk', sans-serif !imp
            text-transform: uppercase; letter-spacing: .08em; }
 .step .t { font-weight: 600; margin: 2px 0 8px; }
 .step .body { font-size: .9rem; color: #2d2d2b; }
+/* caixas st.info (respostas geradas, avisos) no tom do tema, em vez do azul padrão */
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]) { background-color: #fdecea !important; }
+[data-testid="stAlertContentInfo"], [data-testid="stAlertContentInfo"] * { color: #6b1209 !important; }
+/* código inline (modelo, arquivo) no tom do tema, em vez do verde padrão */
+code { color: #8f1810 !important; background: #fdecea !important; border-radius: 4px; padding: 1px 5px; }
+.fluxo { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; margin: .4rem 0 .8rem; }
+.fluxo .etapa { flex: 1 1 150px; background: #fff; border: 1px solid #f1d2cd; border-top: 4px solid var(--c);
+                border-radius: 12px; padding: 12px 14px; }
+.fluxo .etapa .quem { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--c);
+                      font-weight: 700; }
+.fluxo .etapa b { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 1.02rem; margin: 2px 0 4px; }
+.fluxo .etapa span { font-size: .84rem; color: #52514e; }
+.fluxo .seta { align-self: center; color: #da291c; font-size: 1.3rem; font-weight: 700; }
+.saidas { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: .8rem; }
+.saidas div { background: #fff; border: 1px solid #f1d2cd; border-radius: 999px; padding: 5px 14px; font-size: .85rem; }
+.rodape { font-size: .82rem; color: #6d6c66; }
 .aviso { background: #fff7e6; border: 1px solid #f5d38a; border-radius: 10px; padding: 8px 12px;
          font-size: .85rem; color: #5c4a14; margin-bottom: .6rem; }
 </style>
@@ -134,10 +153,10 @@ def escala_temas(temas_presentes) -> alt.Scale:
 
 
 # ---------------------------------------------------------------- gráficos
-def barras(df, categoria, valor, titulo_valor, tooltip, cor="#2a78d6", formato="d", altura_barra=28):
+def barras(df, categoria, valor, titulo_valor, tooltip, cor=VERMELHO, formato="d", altura_barra=28):
     """Barras horizontais ordenadas, com valor na ponta e tooltip. `cor` = hex ou alt.Color."""
     base = alt.Chart(df).encode(
-        y=alt.Y(f"{categoria}:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320, labelFontSize=12)),
+        y=alt.Y(f"{categoria}:N", sort=alt.EncodingSortField(field=valor, op="max", order="descending"), title=None, axis=alt.Axis(labelLimit=320, labelFontSize=12)),
         x=alt.X(f"{valor}:Q", title=titulo_valor, axis=alt.Axis(format=formato, grid=True, tickCount=5)),
         tooltip=tooltip,
     )
@@ -147,6 +166,12 @@ def barras(df, categoria, valor, titulo_valor, tooltip, cor="#2a78d6", formato="
         marca = base.mark_bar(cornerRadiusEnd=4, height=altura_barra - 9).encode(color=cor)
     rotulo = base.mark_text(align="left", dx=5, fontWeight=600).encode(text=alt.Text(f"{valor}:Q", format=formato))
     return (marca + rotulo).properties(height=max(120, altura_barra * len(df)))
+
+
+def desenhar(grafico, onde=None, **opcoes) -> None:
+    """Mostra o gráfico com a altura dele: sem isso o Streamlit achata gráficos de poucas linhas (barras encavaladas)."""
+    altura = grafico.to_dict().get("height")
+    (onde or st).altair_chart(grafico, height=altura + 70 if isinstance(altura, int) else "content", **opcoes)
 
 
 def mapa_de_calor(reviews: pd.DataFrame, max_cidades: int = 12) -> alt.Chart:
@@ -162,12 +187,12 @@ def mapa_de_calor(reviews: pd.DataFrame, max_cidades: int = 12) -> alt.Chart:
         tooltip=[alt.Tooltip("city:N", title="Cidade"), alt.Tooltip("tema_rotulo:N", title="Tema"),
                  alt.Tooltip("casos:Q", title="Reclamações")],
     )
-    celulas = base.mark_rect(cornerRadius=4, stroke="#f7f6f3", strokeWidth=2).encode(
+    celulas = base.mark_rect(cornerRadius=4, stroke="#fffaf0", strokeWidth=2).encode(
         color=alt.Color("casos:Q", title="Reclamações",
-                        scale=alt.Scale(range=["#cde2fb", "#104281"]), legend=alt.Legend(orient="bottom")))
+                        scale=alt.Scale(range=RAMPA_QUENTE), legend=alt.Legend(orient="bottom")))
     texto = base.mark_text(fontWeight=600).encode(
         text="casos:Q",
-        color=alt.condition(alt.datum.casos >= dados["casos"].max() * 0.55, alt.value("white"), alt.value("#1b1b1a")))
+        color=alt.condition(alt.datum.casos >= dados["casos"].max() * 0.65, alt.value("white"), alt.value("#1b1b1a")))
     return (celulas + texto).properties(height=max(160, 30 * len(principais)))
 
 
@@ -301,7 +326,7 @@ def num_br(x: float, casas: int = 0) -> str:
     return f"{x:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-h1.markdown(f"""<div class="card" style="border-left: 5px solid #1baf7a">
+h1.markdown(f"""<div class="card" style="border-left: 5px solid #da291c">
     <div class="tag">Horas economizadas (estimativa)</div>
     <div class="big">≈ {num_br(economia)} h de {num_br(horas_sem_ia)} h · {pct(economia / horas_sem_ia)} do trabalho manual</div>
     <div class="sub">Sem IA: {num_br(n)} reviews × {minutos} min = {num_br(horas_sem_ia, 1)} h de uma pessoa.
@@ -315,7 +340,7 @@ aba_geral, aba_agentes, aba_mapa, aba_ranking, aba_fila, aba_pergunta, aba_ia = 
      "💬 Pergunte aos dados", "🧪 Qualidade da IA"])
 
 
-def painel(titulo: str, valor: str, sub: str, cor: str = "#16304f") -> str:
+def painel(titulo: str, valor: str, sub: str, cor: str = "#8f1810") -> str:
     return (f'<div class="card" style="border-left:5px solid {cor}; margin-bottom:12px"><div class="tag">{titulo}</div>'
             f'<div class="big">{valor}</div><div class="sub">{sub}</div></div>')
 
@@ -343,13 +368,13 @@ with aba_geral:
         grav = reviews.groupby(["gravidade", "gravidade_rotulo"]).size().rename("reviews").reset_index()
         cor_g = alt.Color("gravidade:N", legend=None,
                           scale=alt.Scale(domain=list(CORES_GRAVIDADE), range=list(CORES_GRAVIDADE.values())))
-        st.altair_chart(barras(grav, "gravidade_rotulo", "reviews", "Reviews",
+        desenhar(barras(grav, "gravidade_rotulo", "reviews", "Reviews",
                                [alt.Tooltip("gravidade_rotulo:N", title="Gravidade"), "reviews:Q"], cor=cor_g,
                                altura_barra=34), width="stretch")
         st.subheader("O que os agentes fizeram")
         status = reviews.groupby("status_rotulo").size().rename("reviews").reset_index()
-        st.altair_chart(barras(status, "status_rotulo", "reviews", "Reviews",
-                               [alt.Tooltip("status_rotulo:N", title="Status"), "reviews:Q"], cor="#16304f",
+        desenhar(barras(status, "status_rotulo", "reviews", "Reviews",
+                               [alt.Tooltip("status_rotulo:N", title="Status"), "reviews:Q"], cor=VERMELHO,
                                altura_barra=34), width="stretch")
 
     e1, e2 = st.columns([3, 2], gap="large")
@@ -386,7 +411,7 @@ with aba_geral:
             y=alt.Y("reviews:Q", title=None, axis=alt.Axis(tickCount=4)),
             tooltip=[alt.Tooltip("rating_num:Q", title="Nota"), alt.Tooltip("reviews:Q", title="Reviews"),
                      alt.Tooltip("pct:Q", format=".0%", title="Relatam problema")])
-        st.altair_chart((base_n.mark_bar(cornerRadiusEnd=4, size=38, color="#2a78d6")
+        st.altair_chart((base_n.mark_bar(cornerRadiusEnd=4, size=38, color=AMARELO)
                          + base_n.mark_text(dy=-8, fontWeight=600).encode(text="reviews:Q")).properties(height=300),
                         width="stretch")
 
@@ -395,7 +420,7 @@ with aba_geral:
     if problemas.empty:
         st.info("Sem reclamações com esses filtros.")
     else:
-        st.altair_chart(mapa_de_calor(reviews), width="stretch")
+        desenhar(mapa_de_calor(reviews), width="stretch")
 
 # ---------------------------------------------------------------- por dentro dos agentes
 with aba_agentes:
@@ -416,17 +441,17 @@ with aba_agentes:
                     unsafe_allow_html=True)
         st.markdown(painel("Resultado", status_txt,
                            f"{int(caso['n_chamadas'] or 0)} chamadas ao modelo nesta review",
-                           "#d03b3b" if caso["status"] == "escalado_para_humano" else "#1baf7a"), unsafe_allow_html=True)
+                           "#da291c" if caso["status"] == "escalado_para_humano" else "#ffbc0d"), unsafe_allow_html=True)
         st.caption("O texto original não é exibido (licença do dataset); o resumo foi escrito pelo agente classificador.")
     with a2:
         s1, s2 = st.columns(2, gap="small")
-        s1.markdown(f"""<div class="step" style="--c:#2a78d6"><div class="n">① Classificador</div>
+        s1.markdown(f"""<div class="step" style="--c:#c2410c"><div class="n">① Classificador</div>
             <div class="t">O que o cliente relatou</div><div class="body">
             {chip_tema(caso['tema'])}{chip_gravidade(caso['gravidade'])}
             {chip('Sentimento ' + str(caso['sentimento'] or 'não definido'), '#6d6c66')}
             <p style="margin-top:8px">“{caso['resumo'] or 'sem resumo'}”</p></div></div>""", unsafe_allow_html=True)
         alerta = caso["categorias_alerta"] or ""
-        s2.markdown(f"""<div class="step" style="--c:#d03b3b"><div class="n">② Regra de segurança</div>
+        s2.markdown(f"""<div class="step" style="--c:#da291c"><div class="n">② Regra de segurança</div>
             <div class="t">Verificação em código (sem IA)</div><div class="body">
             {('🛡️ <b>Alerta:</b> ' + alerta.replace('_', ' ') + '<br/>Gravidade forçada para alta.') if alerta
              else '✅ Nenhum termo de saúde, segurança, discriminação ou ameaça.'}
@@ -437,7 +462,7 @@ with aba_agentes:
         acao_final = ROTULOS_ACAO.get(caso["acao_final"], "nenhuma")
         trava = (f"<br/><b>🔒 Trava aplicada:</b> a IA sugeriu <i>{acao_ia}</i>, o código forçou <i>{acao_final}</i>."
                  if caso["trava_aplicada"] and acao_ia != acao_final else "")
-        s3.markdown(f"""<div class="step" style="--c:#6250d6"><div class="n">③ Decisor</div>
+        s3.markdown(f"""<div class="step" style="--c:#8f1810"><div class="n">③ Decisor</div>
             <div class="t">Ação: {acao_final}</div><div class="body">{caso['motivo']}{trava}</div></div>""",
                     unsafe_allow_html=True)
         try:
@@ -452,7 +477,7 @@ with aba_agentes:
                      + (f"<br/><small>Apontamentos: {'; '.join(problemas_rev)}</small>" if problemas_rev else ""))
         else:
             corpo = "Nenhuma resposta: review ignorada (elogio genérico ou sem conteúdo)."
-        s4.markdown(f"""<div class="step" style="--c:#1baf7a"><div class="n">④ Redator + revisor</div>
+        s4.markdown(f"""<div class="step" style="--c:#b45309"><div class="n">④ Redator + revisor</div>
             <div class="t">Resposta ao cliente</div><div class="body">{corpo}</div></div>""", unsafe_allow_html=True)
         st.write("")
         if isinstance(caso["resposta"], str):
@@ -471,8 +496,8 @@ with aba_mapa:
     with mp2:
         minimo_mapa = st.slider("Colorir só lojas com pelo menos N reviews analisadas", 1, 10, MIN_REVIEWS_PADRAO)
     confiavel = mapa["analisadas"] >= minimo_mapa
-    # cor sequencial (um laranja, apagado -> intenso) pelo % com problema; amostra pequena = cinza
-    apagado, intenso = (255, 214, 190), (235, 104, 52)
+    # cor sequencial (um verde, claro -> escuro) pelo % com problema; amostra pequena = cinza
+    apagado, intenso = (190, 232, 190), (18, 110, 50)
     mapa["cor"] = [
         [round(a + (b - a) * p) for a, b in zip(apagado, intenso)] + [235] if ok else [150, 150, 150, 160]
         for p, ok in zip(mapa["pct_problema"], confiavel)]
@@ -491,9 +516,9 @@ with aba_mapa:
             tooltip={"html": "<b>{store_label}</b><br/>Reviews analisadas: {analisadas}<br/>"
                              "Com problema: {com_problema} · {pct_txt}<br/>Gravidade alta: {graves}<br/>"
                              "Nota média (base completa): {nota_txt}",
-                     "style": {"backgroundColor": "#0d1b2a", "color": "white", "fontSize": "12px"}},
+                     "style": {"backgroundColor": "#4a0707", "color": "white", "fontSize": "12px"}},
         ), width="stretch", height=560)
-        st.caption("Tamanho = reviews analisadas · Cor = % das reviews com problema (laranja mais intenso = pior) · "
+        st.caption("Tamanho = reviews analisadas · Cor = % das reviews com problema (verde mais escuro = pior) · "
                    "Cinza = amostra pequena demais para calcular %.")
     with mp2:
         criticas = mapa[confiavel].sort_values(["pct_problema", "com_problema"], ascending=False).head(8)
@@ -503,10 +528,10 @@ with aba_mapa:
         if criticas.empty:
             st.info("Nenhuma loja com amostra suficiente. Diminua o mínimo acima.")
         else:
-            st.altair_chart(barras(criticas, "store_label", "pct_problema", None,
+            desenhar(barras(criticas, "store_label", "pct_problema", None,
                                    [alt.Tooltip("store_label:N", title="Loja"), "analisadas:Q", "com_problema:Q",
                                     alt.Tooltip("pct_problema:Q", format=".0%", title="% com problema")],
-                                   cor="#eb6834", formato=".0%", altura_barra=40), width="stretch")
+                                   cor="#1e8a45", formato=".0%", altura_barra=40), width="stretch")
     with st.expander("Ver tabela"):
         st.dataframe(mapa[["store_label", "analisadas", "com_problema", "pct_problema", "graves",
                            "nota_media_base", "reviews_base"]].sort_values("com_problema", ascending=False),
@@ -535,14 +560,14 @@ with aba_ranking:
     completa["percentual"] = completa["casos"] / completa["analisadas"]
     valor = "casos" if metrica == "Quantidade" else "percentual"
     tabela = completa[completa["casos"] > 0].sort_values([valor, "casos"], ascending=False).head(15)
-    cor_rank = CORES_TEMA.get(filtro, "#16304f")
+    cor_rank = VERMELHO
 
     k1, k2 = st.columns([2.3, 1], gap="large")
     with k1:
         if tabela.empty:
             st.info("Nenhum caso com esses critérios. Experimente diminuir o mínimo de reviews analisadas.")
         else:
-            st.altair_chart(barras(tabela, coluna, valor, "Casos" if valor == "casos" else "% das reviews analisadas",
+            desenhar(barras(tabela, coluna, valor, "Casos" if valor == "casos" else "% das reviews analisadas",
                                    [alt.Tooltip(f"{coluna}:N", title=agrupamento), "casos:Q", "analisadas:Q",
                                     alt.Tooltip("percentual:Q", format=".0%", title="%")],
                                    cor=cor_rank, formato="d" if valor == "casos" else ".0%", altura_barra=32),
@@ -559,7 +584,7 @@ with aba_ranking:
                                f"das reviews com {tema_escolhido.lower()}"), unsafe_allow_html=True)
             sem_casos = int((completa["casos"] == 0).sum())
             st.markdown(painel(f"{rotulo.capitalize()} sem nenhum caso", f"{sem_casos} de {len(completa)}",
-                               f"entre as com pelo menos {minimo} reviews analisadas", "#1baf7a"),
+                               f"entre as com pelo menos {minimo} reviews analisadas", "#8f1810"),
                         unsafe_allow_html=True)
     if not tabela.empty:
         with st.expander("Ver tabela"):
@@ -580,7 +605,7 @@ with aba_fila:
         if not fila_toda.empty:
             por_tema = fila_toda.groupby(["tema_rotulo"]).size().rename("casos").reset_index()
             st.markdown("**Por tema**")
-            st.altair_chart(barras(por_tema, "tema_rotulo", "casos", None,
+            desenhar(barras(por_tema, "tema_rotulo", "casos", None,
                                    [alt.Tooltip("tema_rotulo:N", title="Tema"), "casos:Q"],
                                    cor=alt.Color("tema_rotulo:N", legend=None,
                                                  scale=escala_temas(por_tema["tema_rotulo"])), altura_barra=30),
@@ -634,10 +659,10 @@ with aba_pergunta:
                 else:
                     grupo = resultado.columns[0]
                     valor = "percentual" if interp.percentual else "casos"
-                    st.altair_chart(barras(resultado, grupo, valor, "Casos" if valor == "casos" else "% das reviews",
+                    desenhar(barras(resultado, grupo, valor, "Casos" if valor == "casos" else "% das reviews",
                                            [alt.Tooltip(f"{grupo}:N"), "casos:Q", "analisadas:Q",
                                             alt.Tooltip("percentual:Q", format=".0%")],
-                                           cor=CORES_TEMA.get(interp.filtro, "#16304f"),
+                                           cor=CORES_TEMA.get(interp.filtro, VERMELHO),
                                            formato="d" if valor == "casos" else ".0%"),
                                     width="stretch")
                     with st.expander("Ver tabela"):
@@ -682,14 +707,14 @@ with aba_ia:
                 y=alt.Y(f"{campo}:Q", title=None, axis=alt.Axis(format=".0%", tickCount=4),
                         scale=alt.Scale(domain=[0, 1])),
                 color=alt.Color("destaque:N", legend=None,
-                                scale=alt.Scale(domain=["Em uso", "Avaliada"], range=["#eb6834", "#b7c3d3"])),
+                                scale=alt.Scale(domain=["Em uso", "Avaliada"], range=[VERMELHO, "#f7c3bd"])),
                 tooltip=["versao:N", alt.Tooltip(f"{campo}:Q", format=".0%", title=titulo)],
             )
             rotulo = grafico.mark_text(dy=-8, fontWeight=600).encode(text=alt.Text(f"{campo}:Q", format=".0%"),
                                                                      color=alt.value("#1b1b1a"))
             col.markdown(f"**{titulo}**")
             col.altair_chart((grafico + rotulo).properties(height=220), width="stretch")
-        st.caption(f"Laranja = versão em uso no pipeline ({meta['prompt_classificador']}). Modelo: `{q['modelo'].iloc[0]}`.")
+        st.caption(f"Vermelho = versão em uso no pipeline ({meta['prompt_classificador']}). Modelo: `{q['modelo'].iloc[0]}`.")
         with st.expander("Ver tabela completa"):
             st.dataframe(qualidade, hide_index=True, width="stretch")
 
@@ -699,10 +724,20 @@ with aba_ia:
         m = modelos.copy()
         m["nome"] = m["modelo"].map(lambda x: x.split("/")[-1] + (" (local)" if x.startswith("ollama") else " (API)"))
         m["config"] = m["nome"] + " · " + m["versao"]
-        # uma cor fixa por modelo (paleta categórica, na ordem)
-        nomes = list(dict.fromkeys(m["nome"]))
-        cor_modelo = alt.Color("nome:N", title="Modelo", legend=alt.Legend(orient="bottom"),
-                               scale=alt.Scale(domain=nomes, range=["#2a78d6", "#eda100", "#1baf7a", "#6250d6"][:len(nomes)]))
+        # cada modelo tem uma família de cor (vermelho, laranja...) e cada versão de prompt um tom dela:
+        # versão mais antiga = tom claro, mais nova = tom escuro
+        familias = [["#f7b3ad", "#e8574a", "#da291c", "#8f1810"],
+                    ["#ffe08a", "#ffbc0d", "#f08a1c", "#b45309"]]
+        configs, tons = [], []
+        for i, (nome, grupo) in enumerate(m.groupby("nome", sort=False)):
+            familia = familias[i % len(familias)]
+            versoes = sorted(grupo["versao"])
+            passo = (len(familia) - 1) / max(1, len(versoes) - 1)
+            for j, versao in enumerate(versoes):
+                configs.append(f"{nome} · {versao}")
+                tons.append(familia[round(j * passo)] if len(versoes) > 1 else familia[2])
+        cor_modelo = alt.Color("config:N", legend=None,  # o nome de cada barra já está no eixo
+                               scale=alt.Scale(domain=configs, range=tons))
         c1, c2, c3 = st.columns(3)
         for col, (campo, titulo) in zip([c1, c2], [("acuracia_tema", "Acurácia de tema"),
                                                    ("acuracia_gravidade", "Acurácia de gravidade")]):
@@ -714,7 +749,8 @@ with aba_ia:
             graf = base.mark_bar(cornerRadiusEnd=4, height=20).encode(color=cor_modelo) + \
                 base.mark_text(align="left", dx=4, fontWeight=600).encode(text=alt.Text(f"{campo}:Q", format=".0%"))
             col.markdown(f"**{titulo}**")
-            col.altair_chart(graf.properties(height=40 * len(m) + 30), width="stretch")
+            col.altair_chart(graf.properties(height=44 * len(m)), width="stretch", height=44 * len(m) + 40)
+        c1.caption("Uma cor por modelo (vermelho, amarelo/laranja); tom claro = versão mais antiga do prompt, escuro = mais nova.")
         rapido = m.loc[m["latencia_mediana_s"].idxmin()]
         lento = m.loc[m["latencia_mediana_s"].idxmax()]
         c3.markdown(f"""<div class="card"><div class="tag">Velocidade × custo</div>
@@ -770,21 +806,39 @@ with aba_ia:
                     axis=alt.Axis(labelLimit=200)),
             tooltip=["Modelo local:N", "API:N", alt.Tooltip("n:Q", title="Reviews")])
         celulas = base.mark_rect(cornerRadius=3, stroke="white", strokeWidth=2).encode(
-            color=alt.Color("n:Q", title="Reviews", scale=alt.Scale(scheme="blues"), legend=None))
+            color=alt.Color("n:Q", title="Reviews", scale=alt.Scale(range=RAMPA_QUENTE), legend=None))
         numeros = base.mark_text(fontWeight=600).encode(
-            text="n:Q", color=alt.condition("datum.n > 30", alt.value("white"), alt.value("#1b1b1a")))
+            text="n:Q", color=alt.condition("datum.n > 50", alt.value("white"), alt.value("#1b1b1a")))
         st.markdown("**Tema: quem disse o quê** · a diagonal é onde concordam")
         st.altair_chart((celulas + numeros).properties(height=36 * len(ordem) + 40), width="stretch")
-        st.markdown('<div class="aviso">⚖️ <b>Decisão de negócio, não só técnica:</b> no gabarito, a API erra mais a '
-                    'gravidade (84% × 92%), o que sugere exagero; mas o gabarito só tem 2 casos graves. Se a API '
-                    'estiver certa, o modelo local deixa passar casos graves, que é o erro mais caro. As 38 reviews '
-                    'em que só um modelo marcou "alta" estão no topo da fila de revisão.</div>',
+        st.markdown('<div class="aviso">⚖️ <b>Decisão de negócio:</b> os dois modelos nem sempre concordam sobre '
+                    'o que é grave. A API marca mais casos como graves; o modelo local, menos. Marcar grave demais '
+                    'gasta tempo do gerente; marcar de menos pode deixar um cliente com problema sério sem resposta, '
+                    'e esse é o erro mais caro. Por isso, as 38 reviews em que só um dos modelos viu gravidade alta '
+                    'vão primeiro para uma pessoa revisar.</div>',
                     unsafe_allow_html=True)
 
-    st.markdown(f"""
-- **Agentes:** classificador → regra de segurança (código) → decisor → redator → revisor.
-- **Modelo desta análise:** `{meta['modelo']}` · **chamadas:** {meta['chamadas_llm']} ·
-  **custo:** {'n/d' if custo is None else f'US$ {custo:.4f}'}
-- Dados gerados em {meta['gerado_em']} a partir de `{meta['fonte']}`. Projeto de portfólio, dados públicos,
-  sem vínculo com a marca.
-""")
+    st.subheader("Como cada review passa pelos agentes")
+    etapas = [
+        ("#c2410c", "🤖 IA", "1. Classificador", "Lê a review e define o tema, o sentimento e a gravidade."),
+        ("#da291c", "⚙️ Código", "2. Regra de segurança", "Procura termos de saúde, segurança ou ameaça. "
+                                                         "Se achar, o caso vira grave, diga a IA o que disser."),
+        ("#8f1810", "🤖 IA + ⚙️ código", "3. Decisor", "Escolhe entre ignorar, responder ou escalar. "
+                                                      "Caso grave sempre vai para o gerente."),
+        ("#b45309", "🤖 IA", "4. Redator", "Escreve a resposta ao cliente, sem prometer reembolso nem cupom."),
+        ("#6b3a32", "🤖 IA + ⚙️ código", "5. Revisor", "Confere tom, tamanho e promessas. Reprovou? Reescreve 1 vez; "
+                                                      "reprovou de novo, vai para uma pessoa."),
+    ]
+    blocos = '<div class="seta">→</div>'.join(
+        f'<div class="etapa" style="--c:{cor}"><div class="quem">{quem}</div><b>{nome}</b><span>{texto}</span></div>'
+        for cor, quem, nome, texto in etapas)
+    st.markdown(f'<div class="fluxo">{blocos}</div>'
+                '<div class="saidas"><div>✅ <b>Resposta enviada</b>: tudo aprovado</div>'
+                '<div>🚨 <b>Escalado ao gerente</b>: com rascunho de resposta pronto</div>'
+                '<div>➖ <b>Ignorado</b>: elogio sem nada a responder</div></div>',
+                unsafe_allow_html=True)
+    gerado = pd.to_datetime(meta["gerado_em"]).strftime("%d/%m/%Y %H:%M")
+    st.markdown(f'<div class="rodape">Modelo desta análise: <code>{meta["modelo"]}</code> · '
+                f'{meta["chamadas_llm"]} chamadas · custo {"n/d" if custo is None else f"US$ {custo:.2f}"} · '
+                f'dados gerados em {gerado} a partir de <code>{meta["fonte"]}</code>. '
+                'Projeto de portfólio, dados públicos, sem vínculo com a marca.</div>', unsafe_allow_html=True)
