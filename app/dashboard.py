@@ -41,6 +41,13 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap');
 html, body, [class*="css"], .stMarkdown, .stText { font-family: 'Inter', sans-serif; }
+/* textos internos do Streamlit sem tradução: esconde o inglês e escreve em português */
+[data-testid$="Dropdown"] [role="option"] > span { font-size: 0; }
+[data-testid$="Dropdown"] [role="option"] > span::after { content: "Nenhum resultado"; font-size: 0.9rem; }
+[data-testid$="Dropdown"] [data-key="__select_all__"] > div { font-size: 0; }
+[data-testid$="Dropdown"] [data-key="__select_all__"] > div::after { content: "Selecionar todos"; font-size: 0.9rem; }
+[data-testid="InputInstructions"] > span:first-child { font-size: 0; }
+[data-testid="InputInstructions"] > span:first-child::after { content: "Enter para aplicar"; font-size: 0.75rem; }
 h1, h2, h3, .hero h1, .card .big { font-family: 'Space Grotesk', sans-serif !important; letter-spacing: -0.01em; }
 .block-container { padding-top: 1.6rem; }
 .hero { background: linear-gradient(120deg, #0d1b2a 0%, #16304f 55%, #3a1f4f 100%); color: #f4f3ef;
@@ -81,11 +88,13 @@ def carregar():
     qualidade = pd.read_csv(caminho_q) if caminho_q.exists() else pd.DataFrame()
     caminho_m = PASTA_DADOS / "modelos.csv"
     modelos = pd.read_csv(caminho_m) if caminho_m.exists() else pd.DataFrame()
+    caminho_c = PASTA_DADOS / "concordancia.csv"
+    concordancia = pd.read_csv(caminho_c) if caminho_c.exists() else pd.DataFrame()
     reviews["tema_rotulo"] = reviews["tema"].map(ROTULOS_TEMAS).fillna("Sem classificação")
     reviews["gravidade_rotulo"] = reviews["gravidade"].map(ROTULOS_GRAVIDADE)
     reviews["status_rotulo"] = reviews["status"].map(ROTULOS_STATUS)
     reviews["tem_problema"] = reviews["tema"].notna() & reviews["tema"].ne("elogio_sem_problema")
-    return reviews, lojas, meta, qualidade, modelos
+    return reviews, lojas, meta, qualidade, modelos, concordancia
 
 
 def configuracao(nome: str, padrao: str = "") -> str:
@@ -102,16 +111,21 @@ def pct(x: float) -> str:
     return f"{x:.0%}"
 
 
+def sem_travessao(texto: str) -> str:
+    """Respostas geradas assinam "— The Restaurant Team": na tela, sem travessão."""
+    return texto.replace(" — ", ", ").replace("\n— ", "\n").replace("— ", "").replace("—", "-")
+
+
 def chip(texto: str, cor: str) -> str:
     return f'<span class="chip"><span class="dot" style="background:{cor}"></span>{texto}</span>'
 
 
 def chip_tema(tema) -> str:
-    return chip(ROTULOS_TEMAS.get(tema, "—"), CORES_TEMA.get(tema, "#a3a29c"))
+    return chip(ROTULOS_TEMAS.get(tema, "Sem tema"), CORES_TEMA.get(tema, "#a3a29c"))
 
 
 def chip_gravidade(grav) -> str:
-    return chip(f"Gravidade {ROTULOS_GRAVIDADE.get(grav, '—').lower()}", CORES_GRAVIDADE.get(grav, "#a3a29c"))
+    return chip(f"Gravidade {ROTULOS_GRAVIDADE.get(grav, 'não definida').lower()}", CORES_GRAVIDADE.get(grav, "#a3a29c"))
 
 
 def escala_temas(temas_presentes) -> alt.Scale:
@@ -158,21 +172,59 @@ def mapa_de_calor(reviews: pd.DataFrame, max_cidades: int = 12) -> alt.Chart:
 
 
 # ---------------------------------------------------------------- dados + filtros
-reviews_todas, lojas, meta, qualidade, modelos = carregar()
+reviews_todas, lojas, meta, qualidade, modelos, concordancia = carregar()
 
-f1, f2, f3 = st.columns([1, 2, 1])
-estados = f1.multiselect("Estado", sorted(reviews_todas["state"].dropna().unique()))
-cidades_opcoes = reviews_todas[reviews_todas["state"].isin(estados)] if estados else reviews_todas
-cidades = f2.multiselect("Cidade", sorted(cidades_opcoes["city"].dropna().unique()))
-notas = f3.select_slider("Nota (estrelas)", options=[1, 2, 3, 4, 5], value=(1, 5))
+# Período: o dataset só traz a idade relativa da review ("há 3 anos"), não a data exata.
+ORDEM_PERIODOS = ["6+ anos", "3-5 anos", "1-2 anos", "1-11 meses", "< 1 mês"]  # do mais antigo ao mais recente
+FILTROS = {"f_periodos": [], "f_estados": [], "f_cidades": [], "f_notas": (1, 5), "f_temas": []}
+for chave, padrao in FILTROS.items():
+    st.session_state.setdefault(chave, padrao)
 
-reviews = reviews_todas[reviews_todas["rating_num"].between(*notas)]
-if estados:
-    reviews = reviews[reviews["state"].isin(estados)]
-if cidades:
-    reviews = reviews[reviews["city"].isin(cidades)]
+
+st.session_state.setdefault("versao_filtros", 0)
+
+
+def limpar_filtros() -> None:
+    for chave, padrao in FILTROS.items():
+        st.session_state[chave] = padrao
+    st.session_state["versao_filtros"] += 1  # recria o controle de notas já na faixa padrão
+
+
+def ao_clicar_tema() -> None:
+    """Clique numa barra de tema filtra o dashboard inteiro; clique no vazio limpa."""
+    pontos = st.session_state["grafico_temas"].selection.get("sel_tema", [])
+    st.session_state["f_temas"] = [p["tema_rotulo"] for p in pontos]
+
+
+with st.container(border=True):
+    f0, f1, f2, f3, f4, f5 = st.columns([2.6, 1.2, 1.6, 1.6, 1.3, 0.7], vertical_alignment="bottom")
+    f0.pills("Período (idade da review)", [p for p in ORDEM_PERIODOS if p in set(reviews_todas["time_bucket"])],
+             selection_mode="multi", key="f_periodos")
+    f1.multiselect("Estado", sorted(reviews_todas["state"].dropna().unique()), key="f_estados", placeholder="Todos",
+                   format_func=lambda uf: "Não informado" if uf == "??" else uf)
+    base_cidades = (reviews_todas[reviews_todas["state"].isin(st.session_state["f_estados"])]
+                    if st.session_state["f_estados"] else reviews_todas)
+    f2.multiselect("Cidade", sorted(base_cidades["city"].dropna().unique()), key="f_cidades", placeholder="Todas")
+    f3.multiselect("Tema", [ROTULOS_TEMAS[t] for t in CORES_TEMA], key="f_temas", placeholder="Todos")
+    st.session_state["f_notas"] = f4.select_slider("Nota (estrelas)", options=[1, 2, 3, 4, 5],
+                                                   value=tuple(st.session_state["f_notas"]),
+                                                   key=f"w_notas_{st.session_state['versao_filtros']}")
+    f5.button("Limpar", on_click=limpar_filtros, width="stretch", help="Remove todos os filtros")
+
+# sem_tema = filtros de tudo, MENOS o tema: usado no gráfico de temas (para dar para trocar de tema clicando)
+faixa_notas = st.session_state["f_notas"]
+faixa_notas = tuple(faixa_notas) if isinstance(faixa_notas, (list, tuple)) else (faixa_notas, faixa_notas)
+sem_tema = reviews_todas[reviews_todas["rating_num"].between(*faixa_notas)]
+if st.session_state["f_periodos"]:
+    sem_tema = sem_tema[sem_tema["time_bucket"].isin(st.session_state["f_periodos"])]
+if st.session_state["f_estados"]:
+    sem_tema = sem_tema[sem_tema["state"].isin(st.session_state["f_estados"])]
+if st.session_state["f_cidades"]:
+    sem_tema = sem_tema[sem_tema["city"].isin(st.session_state["f_cidades"])]
+reviews = sem_tema[sem_tema["tema_rotulo"].isin(st.session_state["f_temas"])] if st.session_state["f_temas"] else sem_tema
 if reviews.empty:
     st.warning("Nenhuma review com esses filtros.")
+    st.button("Limpar filtros", on_click=limpar_filtros, key="limpar_vazio")
     st.stop()
 
 # ---------------------------------------------------------------- hero
@@ -180,11 +232,12 @@ n = len(reviews)
 graves = int(reviews["gravidade"].eq("alta").sum())
 escaladas = int(reviews["status"].eq("escalado_para_humano").sum())
 automatico = reviews["status"].isin(["resposta_enviada", "ignorado"]).mean()
+filtrado = n < len(reviews_todas)
 st.markdown(f"""
 <div class="hero">
   <h1>Central de operações de reviews <span class="accent">com IA</span></h1>
-  <p>Agentes de IA leem avaliações de clientes, classificam o problema, decidem a ação e escrevem a resposta —
-     e casos graves sempre chegam a um humano.</p>
+  <p>Agentes de IA leem avaliações de clientes, classificam o problema, decidem a ação e escrevem a resposta.
+     Casos graves sempre chegam a um humano.{' <b>Filtros ativos: os números refletem a seleção.</b>' if filtrado else ''}</p>
   <div class="nums">
     <div><div class="num">{n:,}</div><div class="lbl">reviews analisadas</div></div>
     <div><div class="num">{pct(reviews['tem_problema'].mean())}</div><div class="lbl">relatam um problema</div></div>
@@ -195,10 +248,9 @@ st.markdown(f"""
 </div>
 """.replace(",", "."), unsafe_allow_html=True)
 
-if n < 200:
-    st.markdown(f'<div class="aviso">⚠️ Prévia com apenas {n} reviews analisadas (≈{n / reviews["store_id"].nunique():.0f} '
-                'por loja). Rankings e percentuais por loja ficam instáveis até a análise completa da amostra.</div>',
-                unsafe_allow_html=True)
+if n < 30:
+    st.markdown(f'<div class="aviso">⚠️ Seleção com apenas {n} reviews: percentuais por loja e cidade ficam '
+                'instáveis. Amplie os filtros para conclusões mais firmes.</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------------- destaques
 problemas = reviews[reviews["tem_problema"]]
@@ -218,14 +270,17 @@ if not problemas.empty:
             <div class="big">{cid.name}</div>
             <div class="sub">{pct(cid['p'])} das reviews relatam problema (n={int(cid['n'])})</div></div>""",
                     unsafe_allow_html=True)
+else:
+    d1.markdown('<div class="card"><div class="tag">Problema nº 1</div><div class="big">Nenhum</div>'
+                '<div class="sub">Sem reclamações nesta seleção.</div></div>', unsafe_allow_html=True)
 travas = int(reviews["trava_aplicada"].sum())
 d3.markdown(f"""<div class="card"><div class="tag">Rede de segurança</div>
     <div class="big">{graves} casos graves</div>
-    <div class="sub">{travas} detectado(s) só pela regra em código — o modelo tinha classificado como não grave</div></div>""",
+    <div class="sub">{travas} detectado(s) só pela regra em código: o modelo tinha classificado como não grave</div></div>""",
             unsafe_allow_html=True)
 custo = meta.get("custo_total_usd")
 d4.markdown(f"""<div class="card"><div class="tag">Custo da análise</div>
-    <div class="big">{'—' if custo is None else f'US$ {custo:.2f}'}</div>
+    <div class="big">{'n/d' if custo is None else f'US$ {custo:.2f}'}</div>
     <div class="sub">{meta['chamadas_llm']} chamadas ao modelo <code>{meta['modelo']}</code></div></div>""",
             unsafe_allow_html=True)
 st.write("")
@@ -233,7 +288,7 @@ st.write("")
 # ---------------------------------------------------------------- impacto: horas economizadas
 # Estimativa, não medição: a premissa (minutos por review) fica visível e ajustável.
 # Sem IA, uma pessoa trata TODAS as reviews; com IA, só as escaladas continuam com humano.
-h1, h2 = st.columns([3, 1], gap="large")
+h1, h2 = st.columns([3, 1], gap="large", vertical_alignment="center")
 minutos = h2.slider("Premissa: minutos de trabalho manual por review", 1, 10, 3,
                     help="Ler, classificar, decidir o que fazer e escrever a resposta.")
 horas_sem_ia = n * minutos / 60
@@ -259,31 +314,82 @@ aba_geral, aba_agentes, aba_mapa, aba_ranking, aba_fila, aba_pergunta, aba_ia = 
     ["📊 Visão geral", "🤖 Por dentro dos agentes", "🗺️ Mapa", "🏆 Lojas e cidades", "🚨 Casos escalados",
      "💬 Pergunte aos dados", "🧪 Qualidade da IA"])
 
+
+def painel(titulo: str, valor: str, sub: str, cor: str = "#16304f") -> str:
+    return (f'<div class="card" style="border-left:5px solid {cor}; margin-bottom:12px"><div class="tag">{titulo}</div>'
+            f'<div class="big">{valor}</div><div class="sub">{sub}</div></div>')
+
+
 # ---------------------------------------------------------------- visão geral
 with aba_geral:
     c1, c2 = st.columns([3, 2], gap="large")
     with c1:
         st.subheader("Do que os clientes reclamam")
-        temas = reviews.groupby(["tema", "tema_rotulo"]).size().rename("reviews").reset_index()
-        temas["percentual"] = temas["reviews"] / n
+        st.caption("Clique numa barra para filtrar o dashboard inteiro por esse tema; clique no vazio para limpar.")
+        temas = sem_tema.groupby(["tema", "tema_rotulo"]).size().rename("reviews").reset_index()
+        temas["percentual"] = temas["reviews"] / len(sem_tema)
+        escolhidos = st.session_state["f_temas"]
+        temas["opacidade"] = [1.0 if not escolhidos or r in escolhidos else 0.25 for r in temas["tema_rotulo"]]
+        sel = alt.selection_point(name="sel_tema", fields=["tema_rotulo"])
         cor = alt.Color("tema_rotulo:N", legend=None, scale=escala_temas(temas["tema_rotulo"]))
-        st.altair_chart(barras(temas, "tema_rotulo", "reviews", "Reviews",
-                               [alt.Tooltip("tema_rotulo:N", title="Tema"), alt.Tooltip("reviews:Q", title="Reviews"),
-                                alt.Tooltip("percentual:Q", format=".0%", title="% das reviews")], cor=cor),
-                        width="stretch")
+        grafico = barras(temas, "tema_rotulo", "reviews", "Reviews",
+                         [alt.Tooltip("tema_rotulo:N", title="Tema"), alt.Tooltip("reviews:Q", title="Reviews"),
+                          alt.Tooltip("percentual:Q", format=".0%", title="% das reviews")], cor=cor, altura_barra=36)
+        grafico = grafico.encode(opacity=alt.Opacity("opacidade:Q", legend=None, scale=None)).add_params(sel)
+        st.altair_chart(grafico, width="stretch", on_select=ao_clicar_tema, key="grafico_temas",
+                        selection_mode="sel_tema")
     with c2:
         st.subheader("Gravidade")
         grav = reviews.groupby(["gravidade", "gravidade_rotulo"]).size().rename("reviews").reset_index()
         cor_g = alt.Color("gravidade:N", legend=None,
                           scale=alt.Scale(domain=list(CORES_GRAVIDADE), range=list(CORES_GRAVIDADE.values())))
         st.altair_chart(barras(grav, "gravidade_rotulo", "reviews", "Reviews",
-                               [alt.Tooltip("gravidade_rotulo:N", title="Gravidade"), "reviews:Q"], cor=cor_g),
-                        width="stretch")
+                               [alt.Tooltip("gravidade_rotulo:N", title="Gravidade"), "reviews:Q"], cor=cor_g,
+                               altura_barra=34), width="stretch")
         st.subheader("O que os agentes fizeram")
         status = reviews.groupby("status_rotulo").size().rename("reviews").reset_index()
         st.altair_chart(barras(status, "status_rotulo", "reviews", "Reviews",
-                               [alt.Tooltip("status_rotulo:N", title="Status"), "reviews:Q"], cor="#16304f"),
+                               [alt.Tooltip("status_rotulo:N", title="Status"), "reviews:Q"], cor="#16304f",
+                               altura_barra=34), width="stretch")
+
+    e1, e2 = st.columns([3, 2], gap="large")
+    with e1:
+        st.subheader("Como as reclamações mudam com o tempo")
+        st.caption("Composição das reclamações em cada período (idade da review).")
+        tempo = (reviews[reviews["tem_problema"]].groupby(["time_bucket", "tema_rotulo"]).size()
+                 .rename("casos").reset_index())
+        if tempo.empty:
+            st.info("Sem reclamações nesta seleção.")
+        else:
+            tempo["total"] = tempo.groupby("time_bucket")["casos"].transform("sum")
+            tempo["parte"] = tempo["casos"] / tempo["total"]
+            periodos = [p for p in ORDEM_PERIODOS if p in set(tempo["time_bucket"])]
+            evolucao = alt.Chart(tempo).mark_bar(stroke="white", strokeWidth=2, cornerRadius=2).encode(
+                x=alt.X("time_bucket:N", sort=periodos, title=None, axis=alt.Axis(labelAngle=0)),
+                y=alt.Y("casos:Q", stack="normalize", title=None, axis=alt.Axis(format=".0%", tickCount=4)),
+                color=alt.Color("tema_rotulo:N", title=None, scale=escala_temas(tempo["tema_rotulo"]),
+                                legend=alt.Legend(orient="bottom", columns=4)),
+                order=alt.Order("tema_rotulo:N"),
+                tooltip=[alt.Tooltip("time_bucket:N", title="Período"), alt.Tooltip("tema_rotulo:N", title="Tema"),
+                         alt.Tooltip("casos:Q", title="Reclamações"), alt.Tooltip("parte:Q", format=".0%", title="% do período"),
+                         alt.Tooltip("total:Q", title="Reclamações no período")])
+            st.altair_chart(evolucao.properties(height=300), width="stretch")
+    with e2:
+        st.subheader("Distribuição das notas")
+        st.caption("Quantas reviews em cada nota, e quantas delas relatam problema.")
+        notas_df = reviews.groupby("rating_num").agg(reviews=("review_id", "size"),
+                                                      com_problema=("tem_problema", "sum")).reset_index()
+        notas_df["estrelas"] = notas_df["rating_num"].map(lambda x: "★" * int(x))
+        notas_df["pct"] = notas_df["com_problema"] / notas_df["reviews"]
+        base_n = alt.Chart(notas_df).encode(
+            x=alt.X("estrelas:N", sort=[("★" * i) for i in range(1, 6)], title=None, axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("reviews:Q", title=None, axis=alt.Axis(tickCount=4)),
+            tooltip=[alt.Tooltip("rating_num:Q", title="Nota"), alt.Tooltip("reviews:Q", title="Reviews"),
+                     alt.Tooltip("pct:Q", format=".0%", title="Relatam problema")])
+        st.altair_chart((base_n.mark_bar(cornerRadiusEnd=4, size=38, color="#2a78d6")
+                         + base_n.mark_text(dy=-8, fontWeight=600).encode(text="reviews:Q")).properties(height=300),
                         width="stretch")
+
     st.subheader("Onde cada problema se concentra")
     st.caption("Cidades com mais reclamações × tipo de problema. Passe o mouse para ver os números.")
     if problemas.empty:
@@ -293,8 +399,6 @@ with aba_geral:
 
 # ---------------------------------------------------------------- por dentro dos agentes
 with aba_agentes:
-    st.markdown("Escolha uma review e veja **cada decisão da IA**, passo a passo. O texto original não é "
-                "exibido (licença do dataset); o resumo foi escrito pelo próprio agente classificador.")
     candidatos = reviews.copy()
     candidatos["prioridade"] = (candidatos["trava_aplicada"].astype(int) * 4
                                 + candidatos["gravidade"].eq("alta").astype(int) * 2
@@ -302,57 +406,70 @@ with aba_agentes:
     candidatos = candidatos.sort_values("prioridade", ascending=False)
     opcoes = {f"#{r.review_id} · {r.tema_rotulo} · {r.rating_num}★ · {r.store_label}": r.review_id
               for r in candidatos.itertuples()}
-    escolha = st.selectbox("Review", list(opcoes), help="As primeiras da lista são os casos mais interessantes.")
-    caso = candidatos[candidatos["review_id"] == opcoes[escolha]].iloc[0]
-
-    s1, s2, s3, s4 = st.columns(4, gap="small")
-    s1.markdown(f"""<div class="step" style="--c:#2a78d6"><div class="n">① Classificador</div>
-        <div class="t">O que o cliente relatou</div><div class="body">
-        {chip_tema(caso['tema'])}{chip_gravidade(caso['gravidade'])}
-        {chip('Sentimento ' + str(caso['sentimento'] or '—'), '#6d6c66')}
-        <p style="margin-top:8px">“{caso['resumo'] or '—'}”</p></div></div>""", unsafe_allow_html=True)
-    alerta = caso["categorias_alerta"] or ""
-    s2.markdown(f"""<div class="step" style="--c:#d03b3b"><div class="n">② Regra de segurança</div>
-        <div class="t">Verificação em código (sem IA)</div><div class="body">
-        {('🛡️ <b>Alerta:</b> ' + alerta.replace('_', ' ') + '<br/>Gravidade forçada para alta.') if alerta
-         else '✅ Nenhum termo de saúde, segurança, discriminação ou ameaça.'}
-        </div></div>""", unsafe_allow_html=True)
-    acao_ia = ROTULOS_ACAO.get(caso["acao_decisor"], "—")
-    acao_final = ROTULOS_ACAO.get(caso["acao_final"], "—")
-    trava = (f"<br/><b>🔒 Trava aplicada:</b> a IA sugeriu <i>{acao_ia}</i>, o código forçou <i>{acao_final}</i>."
-             if caso["trava_aplicada"] and acao_ia != acao_final else "")
-    s3.markdown(f"""<div class="step" style="--c:#6250d6"><div class="n">③ Decisor</div>
-        <div class="t">Ação: {acao_final}</div><div class="body">{caso['motivo']}{trava}</div></div>""",
-                unsafe_allow_html=True)
-    try:
-        problemas_rev = ast.literal_eval(caso["problemas_revisao"]) if isinstance(caso["problemas_revisao"], str) else []
-    except (ValueError, SyntaxError):
-        problemas_rev = []
-    if isinstance(caso["resposta"], str):
-        aprov = "✅ Aprovada pelo revisor" if caso["revisao_aprovada"] else "❌ Reprovada pelo revisor"
-        tent = int(caso["tentativas_redacao"] or 0)
-        corpo = (f"<b>{aprov}</b> · {tent} tentativa(s)"
-                 + (f"<br/><small>Apontamentos: {'; '.join(problemas_rev)}</small>" if problemas_rev else ""))
-    else:
-        corpo = "Nenhuma resposta: review ignorada (elogio genérico ou sem conteúdo)."
-    s4.markdown(f"""<div class="step" style="--c:#1baf7a"><div class="n">④ Redator + revisor</div>
-        <div class="t">Resposta ao cliente</div><div class="body">{corpo}</div></div>""", unsafe_allow_html=True)
-    if isinstance(caso["resposta"], str):
-        st.markdown("**Resposta gerada**" + (" (rascunho para o gerente)" if caso["status"] == "escalado_para_humano"
-                                              else " (enviada automaticamente — simulado)"))
-        st.info(caso["resposta"])
+    a1, a2 = st.columns([1, 2.4], gap="large")
+    with a1:
+        st.markdown("Escolha uma review e veja **cada decisão da IA**, passo a passo.")
+        escolha = st.selectbox("Review", list(opcoes), help="As primeiras da lista são os casos mais interessantes.")
+        caso = candidatos[candidatos["review_id"] == opcoes[escolha]].iloc[0]
+        status_txt = ROTULOS_STATUS.get(caso["status"], "sem status")
+        st.markdown(painel("Loja", str(caso["store_label"]), f"{caso['city']}, {caso['state']} · nota {caso['rating_num']}★"),
+                    unsafe_allow_html=True)
+        st.markdown(painel("Resultado", status_txt,
+                           f"{int(caso['n_chamadas'] or 0)} chamadas ao modelo nesta review",
+                           "#d03b3b" if caso["status"] == "escalado_para_humano" else "#1baf7a"), unsafe_allow_html=True)
+        st.caption("O texto original não é exibido (licença do dataset); o resumo foi escrito pelo agente classificador.")
+    with a2:
+        s1, s2 = st.columns(2, gap="small")
+        s1.markdown(f"""<div class="step" style="--c:#2a78d6"><div class="n">① Classificador</div>
+            <div class="t">O que o cliente relatou</div><div class="body">
+            {chip_tema(caso['tema'])}{chip_gravidade(caso['gravidade'])}
+            {chip('Sentimento ' + str(caso['sentimento'] or 'não definido'), '#6d6c66')}
+            <p style="margin-top:8px">“{caso['resumo'] or 'sem resumo'}”</p></div></div>""", unsafe_allow_html=True)
+        alerta = caso["categorias_alerta"] or ""
+        s2.markdown(f"""<div class="step" style="--c:#d03b3b"><div class="n">② Regra de segurança</div>
+            <div class="t">Verificação em código (sem IA)</div><div class="body">
+            {('🛡️ <b>Alerta:</b> ' + alerta.replace('_', ' ') + '<br/>Gravidade forçada para alta.') if alerta
+             else '✅ Nenhum termo de saúde, segurança, discriminação ou ameaça.'}
+            </div></div>""", unsafe_allow_html=True)
+        st.write("")
+        s3, s4 = st.columns(2, gap="small")
+        acao_ia = ROTULOS_ACAO.get(caso["acao_decisor"], "nenhuma")
+        acao_final = ROTULOS_ACAO.get(caso["acao_final"], "nenhuma")
+        trava = (f"<br/><b>🔒 Trava aplicada:</b> a IA sugeriu <i>{acao_ia}</i>, o código forçou <i>{acao_final}</i>."
+                 if caso["trava_aplicada"] and acao_ia != acao_final else "")
+        s3.markdown(f"""<div class="step" style="--c:#6250d6"><div class="n">③ Decisor</div>
+            <div class="t">Ação: {acao_final}</div><div class="body">{caso['motivo']}{trava}</div></div>""",
+                    unsafe_allow_html=True)
+        try:
+            problemas_rev = (ast.literal_eval(caso["problemas_revisao"])
+                             if isinstance(caso["problemas_revisao"], str) else [])
+        except (ValueError, SyntaxError):
+            problemas_rev = []
+        if isinstance(caso["resposta"], str):
+            aprov = "✅ Aprovada pelo revisor" if caso["revisao_aprovada"] else "❌ Reprovada pelo revisor"
+            tent = int(caso["tentativas_redacao"] or 0)
+            corpo = (f"<b>{aprov}</b> · {tent} tentativa(s)"
+                     + (f"<br/><small>Apontamentos: {'; '.join(problemas_rev)}</small>" if problemas_rev else ""))
+        else:
+            corpo = "Nenhuma resposta: review ignorada (elogio genérico ou sem conteúdo)."
+        s4.markdown(f"""<div class="step" style="--c:#1baf7a"><div class="n">④ Redator + revisor</div>
+            <div class="t">Resposta ao cliente</div><div class="body">{corpo}</div></div>""", unsafe_allow_html=True)
+        st.write("")
+        if isinstance(caso["resposta"], str):
+            st.markdown("**Resposta gerada**" + (" (rascunho para o gerente)" if caso["status"] == "escalado_para_humano"
+                                                  else " (enviada automaticamente, simulado)"))
+            st.info(sem_travessao(caso["resposta"]))
 
 # ---------------------------------------------------------------- mapa
 with aba_mapa:
-    m1, m2 = st.columns([1, 1])
-    modo = m1.radio("Visualização", ["Colunas 3D", "Círculos"], horizontal=True)
-    minimo_mapa = m2.slider("Colorir só lojas com pelo menos N reviews analisadas", 1, 10, MIN_REVIEWS_PADRAO)
-
     por_loja = reviews.groupby("store_id").agg(analisadas=("review_id", "size"),
                                                com_problema=("tem_problema", "sum"),
                                                graves=("gravidade", lambda s: int((s == "alta").sum()))).reset_index()
     mapa = lojas.merge(por_loja, on="store_id", how="inner").dropna(subset=["latitude", "longitude"])
     mapa["pct_problema"] = mapa["com_problema"] / mapa["analisadas"]
+    mp1, mp2 = st.columns([2.3, 1], gap="large")
+    with mp2:
+        minimo_mapa = st.slider("Colorir só lojas com pelo menos N reviews analisadas", 1, 10, MIN_REVIEWS_PADRAO)
     confiavel = mapa["analisadas"] >= minimo_mapa
     # cor sequencial (um laranja, apagado -> intenso) pelo % com problema; amostra pequena = cinza
     apagado, intenso = (255, 214, 190), (235, 104, 52)
@@ -362,29 +479,34 @@ with aba_mapa:
     mapa["pct_txt"] = [pct(p) if ok else f"amostra pequena ({a})" for p, ok, a
                        in zip(mapa["pct_problema"], confiavel, mapa["analisadas"])]
     mapa["nota_txt"] = mapa["nota_media_base"].map(lambda x: f"{x:.1f}")
-
-    if modo == "Colunas 3D":
-        camada = pdk.Layer("ColumnLayer", data=mapa, get_position="[longitude, latitude]",
-                           get_elevation="com_problema", elevation_scale=60000, radius=28000,
-                           get_fill_color="cor", pickable=True, auto_highlight=True, extruded=True)
-        vista = pdk.ViewState(latitude=35.5, longitude=-95, zoom=3.3, pitch=50, bearing=-12)
-    else:
-        mapa["raio"] = 9000 + mapa["analisadas"] * 2500
-        camada = pdk.Layer("ScatterplotLayer", data=mapa, get_position="[longitude, latitude]",
-                           get_fill_color="cor", get_radius="raio", radius_min_pixels=6, radius_max_pixels=45,
-                           stroked=True, get_line_color=[90, 90, 90], line_width_min_pixels=1,
-                           pickable=True, auto_highlight=True)
-        vista = pdk.ViewState(latitude=37.5, longitude=-96, zoom=3.2)
-    st.pydeck_chart(pdk.Deck(
-        layers=[camada], initial_view_state=vista, map_provider="carto", map_style=pdk.map_styles.CARTO_LIGHT,
-        tooltip={"html": "<b>{store_label}</b><br/>Reviews analisadas: {analisadas}<br/>"
-                         "Com problema: {com_problema} · {pct_txt}<br/>Gravidade alta: {graves}<br/>"
-                         "Nota média (base completa): {nota_txt}",
-                 "style": {"backgroundColor": "#0d1b2a", "color": "white", "fontSize": "12px"}},
-    ), width="stretch", height=520)
-    st.caption(("Altura = reclamações" if modo == "Colunas 3D" else "Tamanho = reviews analisadas")
-               + " · Cor = % das reviews com problema (laranja mais intenso = pior) · Cinza = amostra pequena "
-                 "demais para calcular %. Arraste com o botão direito para girar.")
+    mapa["raio"] = 9000 + mapa["analisadas"] * 2500
+    camada = pdk.Layer("ScatterplotLayer", data=mapa, get_position="[longitude, latitude]",
+                       get_fill_color="cor", get_radius="raio", radius_min_pixels=6, radius_max_pixels=45,
+                       stroked=True, get_line_color=[90, 90, 90], line_width_min_pixels=1,
+                       pickable=True, auto_highlight=True)
+    with mp1:
+        st.pydeck_chart(pdk.Deck(
+            layers=[camada], initial_view_state=pdk.ViewState(latitude=37.5, longitude=-96, zoom=3.2),
+            map_provider="carto", map_style=pdk.map_styles.CARTO_LIGHT,
+            tooltip={"html": "<b>{store_label}</b><br/>Reviews analisadas: {analisadas}<br/>"
+                             "Com problema: {com_problema} · {pct_txt}<br/>Gravidade alta: {graves}<br/>"
+                             "Nota média (base completa): {nota_txt}",
+                     "style": {"backgroundColor": "#0d1b2a", "color": "white", "fontSize": "12px"}},
+        ), width="stretch", height=560)
+        st.caption("Tamanho = reviews analisadas · Cor = % das reviews com problema (laranja mais intenso = pior) · "
+                   "Cinza = amostra pequena demais para calcular %.")
+    with mp2:
+        criticas = mapa[confiavel].sort_values(["pct_problema", "com_problema"], ascending=False).head(8)
+        st.markdown(painel("Lojas no mapa", f"{len(mapa)}",
+                           f"{int(confiavel.sum())} com amostra suficiente para calcular %"), unsafe_allow_html=True)
+        st.markdown("**Lojas mais críticas** · % das reviews com problema")
+        if criticas.empty:
+            st.info("Nenhuma loja com amostra suficiente. Diminua o mínimo acima.")
+        else:
+            st.altair_chart(barras(criticas, "store_label", "pct_problema", None,
+                                   [alt.Tooltip("store_label:N", title="Loja"), "analisadas:Q", "com_problema:Q",
+                                    alt.Tooltip("pct_problema:Q", format=".0%", title="% com problema")],
+                                   cor="#eb6834", formato=".0%", altura_barra=40), width="stretch")
     with st.expander("Ver tabela"):
         st.dataframe(mapa[["store_label", "analisadas", "com_problema", "pct_problema", "graves",
                            "nota_media_base", "reviews_base"]].sort_values("com_problema", ascending=False),
@@ -399,79 +521,128 @@ with aba_ranking:
     opcoes_tema = {"Qualquer problema": "problema", **{v: k for k, v in ROTULOS_TEMAS.items()
                                                       if k != "elogio_sem_problema"}}
     tema_escolhido = r1.selectbox("Tipo de problema", list(opcoes_tema))
-    agrupamento = r2.radio("Agrupar por", ["Loja", "Cidade"], horizontal=True)
-    metrica = r3.radio("Métrica", ["Quantidade", "% das reviews"], horizontal=True)
+    agrupamento = r2.segmented_control("Agrupar por", ["Loja", "Cidade"], default="Loja") or "Loja"
+    metrica = r3.segmented_control("Métrica", ["Quantidade", "% das reviews"], default="Quantidade") or "Quantidade"
     minimo = r4.number_input("Mínimo de reviews analisadas", min_value=1, value=MIN_REVIEWS_PADRAO,
                              help="Com 1 review, uma loja só pode ter 0% ou 100%.")
 
     coluna = "store_label" if agrupamento == "Loja" else "city"
     filtro = opcoes_tema[tema_escolhido]
     alvo = reviews["tem_problema"] if filtro == "problema" else reviews["tema"].eq(filtro)
-    tabela = (reviews.assign(alvo=alvo).groupby(coluna)
-              .agg(casos=("alvo", "sum"), analisadas=("alvo", "size")).reset_index())
-    tabela = tabela[(tabela["analisadas"] >= minimo) & (tabela["casos"] > 0)]
-    tabela["percentual"] = tabela["casos"] / tabela["analisadas"]
+    completa = (reviews.assign(alvo=alvo).groupby(coluna)
+                .agg(casos=("alvo", "sum"), analisadas=("alvo", "size")).reset_index())
+    completa = completa[completa["analisadas"] >= minimo]
+    completa["percentual"] = completa["casos"] / completa["analisadas"]
     valor = "casos" if metrica == "Quantidade" else "percentual"
-    tabela = tabela.sort_values([valor, "casos"], ascending=False).head(15)
+    tabela = completa[completa["casos"] > 0].sort_values([valor, "casos"], ascending=False).head(15)
     cor_rank = CORES_TEMA.get(filtro, "#16304f")
 
-    if tabela.empty:
-        st.info("Nenhum caso com esses critérios. Experimente diminuir o mínimo de reviews analisadas.")
-    else:
-        st.altair_chart(barras(tabela, coluna, valor, "Casos" if valor == "casos" else "% das reviews analisadas",
-                               [alt.Tooltip(f"{coluna}:N", title=agrupamento), "casos:Q", "analisadas:Q",
-                                alt.Tooltip("percentual:Q", format=".0%", title="%")],
-                               cor=cor_rank, formato="d" if valor == "casos" else ".0%"),
-                        width="stretch")
+    k1, k2 = st.columns([2.3, 1], gap="large")
+    with k1:
+        if tabela.empty:
+            st.info("Nenhum caso com esses critérios. Experimente diminuir o mínimo de reviews analisadas.")
+        else:
+            st.altair_chart(barras(tabela, coluna, valor, "Casos" if valor == "casos" else "% das reviews analisadas",
+                                   [alt.Tooltip(f"{coluna}:N", title=agrupamento), "casos:Q", "analisadas:Q",
+                                    alt.Tooltip("percentual:Q", format=".0%", title="%")],
+                                   cor=cor_rank, formato="d" if valor == "casos" else ".0%", altura_barra=32),
+                            width="stretch")
+    with k2:
+        rotulo = "lojas" if agrupamento == "Loja" else "cidades"
+        if not tabela.empty:
+            pior = tabela.iloc[0]
+            st.markdown(painel(f"Pior {agrupamento.lower()}", str(pior[coluna]),
+                               f"{int(pior['casos'])} casos em {int(pior['analisadas'])} reviews ({pct(pior['percentual'])})",
+                               cor_rank), unsafe_allow_html=True)
+        if not completa.empty:
+            st.markdown(painel(f"Média entre as {rotulo}", pct(completa["percentual"].mean()),
+                               f"das reviews com {tema_escolhido.lower()}"), unsafe_allow_html=True)
+            sem_casos = int((completa["casos"] == 0).sum())
+            st.markdown(painel(f"{rotulo.capitalize()} sem nenhum caso", f"{sem_casos} de {len(completa)}",
+                               f"entre as com pelo menos {minimo} reviews analisadas", "#1baf7a"),
+                        unsafe_allow_html=True)
+    if not tabela.empty:
         with st.expander("Ver tabela"):
             st.dataframe(tabela.rename(columns={coluna: agrupamento}), hide_index=True, width="stretch",
                          column_config={"percentual": st.column_config.NumberColumn(format="percent")})
 
 # ---------------------------------------------------------------- fila de escalados
 with aba_fila:
-    fila = reviews[reviews["status"].eq("escalado_para_humano")].copy()
-    fila["ordem"] = fila["gravidade"].map({"alta": 0, "media": 1, "baixa": 2}).fillna(3)
-    fila = fila.sort_values(["ordem", "rating_num"])
-    st.markdown(f"**{len(fila)} casos** aguardando o gerente da loja, mais graves primeiro. "
-                "Cada um traz um rascunho de resposta já revisado.")
-    for _, c in fila.iterrows():
-        icone = {"alta": "🔴", "media": "🟠", "baixa": "🟡"}.get(c["gravidade"], "⚪")
-        with st.expander(f"{icone} {c['tema_rotulo']} · {c['store_label']} · {c['rating_num']}★"):
-            st.markdown(chip_tema(c["tema"]) + chip_gravidade(c["gravidade"])
-                        + (chip("🛡️ " + c["categorias_alerta"].replace("_", " "), "#d03b3b")
-                           if c["categorias_alerta"] else ""), unsafe_allow_html=True)
-            st.markdown(f"**Resumo (IA):** {c['resumo'] or '—'}  \n**Por que escalou:** {c['motivo']}")
-            if isinstance(c["resposta"], str):
-                st.markdown("**Rascunho de resposta:**")
-                st.info(c["resposta"])
+    fila_toda = reviews[reviews["status"].eq("escalado_para_humano")].copy()
+    fila_toda["ordem"] = fila_toda["gravidade"].map({"alta": 0, "media": 1, "baixa": 2}).fillna(3)
+    q1, q2 = st.columns([1, 2.3], gap="large")
+    with q1:
+        st.markdown(painel("Aguardando o gerente", f"{len(fila_toda)} casos",
+                           "mais graves primeiro; cada um com rascunho de resposta já revisado", "#d03b3b"),
+                    unsafe_allow_html=True)
+        niveis = [ROTULOS_GRAVIDADE[g] for g in ("alta", "media", "baixa") if g in set(fila_toda["gravidade"])]
+        mostrar = st.pills("Mostrar gravidade", niveis, selection_mode="multi", default=niveis)
+        if not fila_toda.empty:
+            por_tema = fila_toda.groupby(["tema_rotulo"]).size().rename("casos").reset_index()
+            st.markdown("**Por tema**")
+            st.altair_chart(barras(por_tema, "tema_rotulo", "casos", None,
+                                   [alt.Tooltip("tema_rotulo:N", title="Tema"), "casos:Q"],
+                                   cor=alt.Color("tema_rotulo:N", legend=None,
+                                                 scale=escala_temas(por_tema["tema_rotulo"])), altura_barra=30),
+                            width="stretch")
+    with q2:
+        codigos = {v: k for k, v in ROTULOS_GRAVIDADE.items()}
+        fila = fila_toda[fila_toda["gravidade"].isin([codigos[m] for m in (mostrar or [])])]
+        fila = fila.sort_values(["ordem", "rating_num"])
+        if fila.empty:
+            st.info("Nenhum caso com esses filtros.")
+        with st.container(height=640, border=False):
+            for _, c in fila.iterrows():
+                icone = {"alta": "🔴", "media": "🟠", "baixa": "🟡"}.get(c["gravidade"], "⚪")
+                with st.expander(f"{icone} {c['tema_rotulo']} · {c['store_label']} · {c['rating_num']}★"):
+                    st.markdown(chip_tema(c["tema"]) + chip_gravidade(c["gravidade"])
+                                + (chip("🛡️ " + c["categorias_alerta"].replace("_", " "), "#d03b3b")
+                                   if c["categorias_alerta"] else ""), unsafe_allow_html=True)
+                    st.markdown(f"**Resumo (IA):** {c['resumo'] or 'sem resumo'}  \n**Por que escalou:** {c['motivo']}")
+                    if isinstance(c["resposta"], str):
+                        st.markdown("**Rascunho de resposta:**")
+                        st.info(sem_travessao(c["resposta"]))
 
 # ---------------------------------------------------------------- perguntas
 with aba_pergunta:
-    st.markdown("Pergunte em português ou inglês. As respostas vêm de consultas nos dados já analisados "
-                "(**sem chamar modelo, custo zero**).")
-    exemplo = st.selectbox("Exemplos", ["(escreva a sua)"] + EXEMPLOS)
-    pergunta = st.text_input("Sua pergunta", value="" if exemplo == "(escreva a sua)" else exemplo)
-    if pergunta:
-        interp = interpretar(pergunta)
-        if interp is None:
-            st.warning("Não entendi a pergunta. Cite um tema (demora, atendimento, limpeza, comida, preço, "
-                       "pedido errado), 'casos graves' ou 'escalados', e se quer por loja, cidade ou estado.")
+    st.session_state.setdefault("pergunta", "")
+
+    def usar_exemplo(texto: str) -> None:
+        st.session_state["pergunta"] = texto
+
+    p1, p2 = st.columns([1, 2.3], gap="large")
+    with p1:
+        st.markdown("**Experimente uma pergunta pronta**")
+        for i, ex in enumerate(EXEMPLOS):
+            st.button(ex, key=f"exemplo_{i}", on_click=usar_exemplo, args=(ex,), width="stretch")
+        st.caption("Respostas vêm de consultas nos dados já analisados: **sem chamar modelo, custo zero**.")
+    with p2:
+        pergunta = st.text_input("Pergunte em português ou inglês", key="pergunta",
+                                 placeholder="Ex.: quais cidades têm mais reclamações de demora?")
+        if not pergunta:
+            st.info("Escreva uma pergunta ou clique num exemplo ao lado.")
         else:
-            st.markdown(f"**Interpretação:** {interp.descrever()}")
-            resultado = responder(reviews, interp)
-            if resultado.empty:
-                st.info("Nenhum caso encontrado.")
+            interp = interpretar(pergunta)
+            if interp is None:
+                st.warning("Não entendi a pergunta. Cite um tema (demora, atendimento, limpeza, comida, preço, "
+                           "pedido errado), 'casos graves' ou 'escalados', e se quer por loja, cidade ou estado.")
             else:
-                grupo = resultado.columns[0]
-                valor = "percentual" if interp.percentual else "casos"
-                st.altair_chart(barras(resultado, grupo, valor, "Casos" if valor == "casos" else "% das reviews",
-                                       [alt.Tooltip(f"{grupo}:N"), "casos:Q", "analisadas:Q",
-                                        alt.Tooltip("percentual:Q", format=".0%")],
-                                       cor=CORES_TEMA.get(interp.filtro, "#16304f"),
-                                       formato="d" if valor == "casos" else ".0%"),
-                                width="stretch")
-                st.dataframe(resultado, hide_index=True, width="stretch",
-                             column_config={"percentual": st.column_config.NumberColumn(format="percent")})
+                st.markdown(f"**Interpretação:** {interp.descrever()}")
+                resultado = responder(reviews, interp)
+                if resultado.empty:
+                    st.info("Nenhum caso encontrado.")
+                else:
+                    grupo = resultado.columns[0]
+                    valor = "percentual" if interp.percentual else "casos"
+                    st.altair_chart(barras(resultado, grupo, valor, "Casos" if valor == "casos" else "% das reviews",
+                                           [alt.Tooltip(f"{grupo}:N"), "casos:Q", "analisadas:Q",
+                                            alt.Tooltip("percentual:Q", format=".0%")],
+                                           cor=CORES_TEMA.get(interp.filtro, "#16304f"),
+                                           formato="d" if valor == "casos" else ".0%"),
+                                    width="stretch")
+                    with st.expander("Ver tabela"):
+                        st.dataframe(resultado, hide_index=True, width="stretch",
+                                     column_config={"percentual": st.column_config.NumberColumn(format="percent")})
 
     # Modo ao vivo (opcional): desligado por padrão para o demo público não gerar custo.
     if configuracao("ENABLE_LIVE_QA", "false").lower() == "true":
@@ -559,10 +730,61 @@ with aba_ia:
                     unsafe_allow_html=True)
         with st.expander("Ver tabela completa"):
             st.dataframe(modelos, hide_index=True, width="stretch")
+
+    conc = concordancia
+    if not conc.empty:
+        n = int(conc["n"].sum())
+        st.subheader(f"Nas {n} reviews: onde os dois modelos concordam")
+        st.markdown("Fora do gabarito não existe \"resposta certa\". Por isso medimos a **concordância** entre o "
+                    "modelo local e a API: onde concordam, a classificação é provavelmente confiável; onde "
+                    "discordam, uma pessoa precisa olhar.")
+        tema_igual = conc.loc[conc["tema_qwen"] == conc["tema_gemini"], "n"].sum() / n
+        grav_igual = conc.loc[conc["gravidade_qwen"] == conc["gravidade_gemini"], "n"].sum() / n
+        alta_q = int(conc.loc[conc["gravidade_qwen"] == "alta", "n"].sum())
+        alta_g = int(conc.loc[conc["gravidade_gemini"] == "alta", "n"].sum())
+        alta_ambos = int(conc.loc[(conc["gravidade_qwen"] == "alta") & (conc["gravidade_gemini"] == "alta"), "n"].sum())
+        discordam = int(conc.loc[(conc["tema_qwen"] != conc["tema_gemini"]) |
+                                 (conc["gravidade_qwen"] != conc["gravidade_gemini"]), "n"].sum())
+        k1, k2, k3 = st.columns(3)
+        k1.markdown(f"""<div class="card"><div class="tag">Concordam no tema</div>
+            <div class="big">{pct(tema_igual)}</div>
+            <div class="sub">das {n} reviews, os dois escolheram o mesmo tema.</div></div>""", unsafe_allow_html=True)
+        k2.markdown(f"""<div class="card"><div class="tag">Concordam na gravidade</div>
+            <div class="big">{pct(grav_igual)}</div>
+            <div class="sub">{discordam} reviews com alguma discordância viraram uma fila de revisão humana.</div></div>""",
+                    unsafe_allow_html=True)
+        k3.markdown(f"""<div class="card"><div class="tag">Casos graves</div>
+            <div class="big">{alta_q} × {alta_g}</div>
+            <div class="sub">modelo local × API marcando gravidade alta; os dois juntos em {alta_ambos}.
+            A API manda o dobro para o gerente.</div></div>""", unsafe_allow_html=True)
+
+        cruz = conc.groupby(["tema_qwen", "tema_gemini"], as_index=False)["n"].sum()
+        cruz["Modelo local"] = cruz["tema_qwen"].map(ROTULOS_TEMAS)
+        cruz["API"] = cruz["tema_gemini"].map(ROTULOS_TEMAS)
+        cruz["igual"] = cruz["tema_qwen"] == cruz["tema_gemini"]
+        ordem = [ROTULOS_TEMAS[t] for t in CORES_TEMA if t in set(cruz["tema_qwen"]) | set(cruz["tema_gemini"])]
+        base = alt.Chart(cruz).encode(
+            x=alt.X("API:N", sort=ordem, title="Tema segundo a API (Gemini)",
+                    axis=alt.Axis(labelAngle=-30, labelLimit=160, orient="top")),
+            y=alt.Y("Modelo local:N", sort=ordem, title="Tema segundo o modelo local (Qwen)",
+                    axis=alt.Axis(labelLimit=200)),
+            tooltip=["Modelo local:N", "API:N", alt.Tooltip("n:Q", title="Reviews")])
+        celulas = base.mark_rect(cornerRadius=3, stroke="white", strokeWidth=2).encode(
+            color=alt.Color("n:Q", title="Reviews", scale=alt.Scale(scheme="blues"), legend=None))
+        numeros = base.mark_text(fontWeight=600).encode(
+            text="n:Q", color=alt.condition("datum.n > 30", alt.value("white"), alt.value("#1b1b1a")))
+        st.markdown("**Tema: quem disse o quê** · a diagonal é onde concordam")
+        st.altair_chart((celulas + numeros).properties(height=36 * len(ordem) + 40), width="stretch")
+        st.markdown('<div class="aviso">⚖️ <b>Decisão de negócio, não só técnica:</b> no gabarito, a API erra mais a '
+                    'gravidade (84% × 92%), o que sugere exagero; mas o gabarito só tem 2 casos graves. Se a API '
+                    'estiver certa, o modelo local deixa passar casos graves, que é o erro mais caro. As 38 reviews '
+                    'em que só um modelo marcou "alta" estão no topo da fila de revisão.</div>',
+                    unsafe_allow_html=True)
+
     st.markdown(f"""
 - **Agentes:** classificador → regra de segurança (código) → decisor → redator → revisor.
 - **Modelo desta análise:** `{meta['modelo']}` · **chamadas:** {meta['chamadas_llm']} ·
-  **custo:** {'—' if custo is None else f'US$ {custo:.4f}'}
+  **custo:** {'n/d' if custo is None else f'US$ {custo:.4f}'}
 - Dados gerados em {meta['gerado_em']} a partir de `{meta['fonte']}`. Projeto de portfólio, dados públicos,
   sem vínculo com a marca.
 """)

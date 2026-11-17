@@ -9,6 +9,7 @@ Saídas em outputs/dashboard/ (estas VÃO para o git e para o demo):
     lojas.parquet     uma linha por loja, com indicadores da base completa (sem IA)
     qualidade.csv     comparativo das versões de prompt (da avaliação)
     modelos.csv       comparativo modelo local x API (se comparar_modelos.py já rodou)
+    concordancia.csv  concordância Qwen x Gemini nas 500 (se concordancia_modelos.py já rodou)
     meta.json         de onde vieram os dados, modelo, versões, custo
 """
 import argparse
@@ -99,6 +100,9 @@ def principal() -> None:
     modelos = config.OUTPUTS_DIR / "avaliacao" / "comparativo_modelos.csv"
     if modelos.exists():  # comparação local x API (comparar_modelos.py)
         pd.read_csv(modelos).to_csv(PASTA_DASHBOARD / "modelos.csv", index=False)
+    concordancia = config.OUTPUTS_DIR / "avaliacao" / "comparativo_concordancia.csv"
+    if concordancia.exists():  # concordância entre modelos nas 500 (concordancia_modelos.py)
+        pd.read_csv(concordancia).to_csv(PASTA_DASHBOARD / "concordancia.csv", index=False)
 
     custos = reviews["custo_usd"]
     meta = {

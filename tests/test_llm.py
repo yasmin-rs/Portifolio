@@ -106,7 +106,17 @@ def test_cota_diaria_esgotada_para_o_lote(ambiente, monkeypatch):
         llm.chamar_modelo("sys", "review", Classificacao, modelo="nuvem/x", usar_cache=False)
 
 
-def test_limite_por_minuto_nao_para_o_lote(ambiente, monkeypatch):
-    fila_de_respostas(monkeypatch, [RuntimeError("429 rate limit per minute")])
+def test_limite_por_minuto_espera_e_tenta_de_novo(ambiente, monkeypatch):
+    esperas = []
+    monkeypatch.setattr(llm, "_dormir", esperas.append)
+    erro = RuntimeError("429 rate limit per minute")
+    fila_de_respostas(monkeypatch, [erro, erro, VALIDO])
+    r = llm.chamar_modelo("sys", "review", Classificacao, modelo="nuvem/x", usar_cache=False)
+    assert r.ok and esperas == list(llm.ESPERAS_LIMITE_MINUTO_S[:2])
+
+
+def test_limite_por_minuto_persistente_falha_sem_parar_o_lote(ambiente, monkeypatch):
+    monkeypatch.setattr(llm, "_dormir", lambda s: None)
+    fila_de_respostas(monkeypatch, [RuntimeError("429 rate limit per minute")] * 4)
     r = llm.chamar_modelo("sys", "review", Classificacao, modelo="nuvem/x", usar_cache=False)
     assert not r.ok and "429" in r.erro

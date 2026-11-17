@@ -80,17 +80,34 @@ def eh_cota_diaria(erro: Exception) -> bool:
     return "429" in texto and ("perday" in texto or "per day" in texto or "daily" in texto)
 
 
+def eh_limite_por_minuto(erro: Exception) -> bool:
+    """429 que NÃO é a cota diária (ex.: 15 pedidos/min no plano gratuito): passa sozinho em ~1 min."""
+    texto = str(erro).lower()
+    return ("429" in texto or "ratelimit" in texto) and not eh_cota_diaria(erro)
+
+
+# Espera crescente entre tentativas quando bate o limite por minuto. Os retries do litellm são
+# rápidos demais (segundos) e falhavam todos dentro do mesmo minuto: 131 de 500 reviews perdidas.
+ESPERAS_LIMITE_MINUTO_S = (20, 40, 65)
+_dormir = time.sleep  # trocado nos testes
+
+
 def _completar(conversa: list[dict], parametros: dict):
-    """litellm.completion; se o modelo recusar `temperature` (alguns modelos novos
-    só aceitam o padrão), tenta de novo sem ele e lembra disso no resto da execução."""
-    try:
-        return litellm.completion(messages=conversa, **parametros)
-    except Exception as e:
-        if "temperature" not in parametros or "temperature" not in str(e).lower():
-            raise
-        _MODELOS_SEM_TEMPERATURA.add(parametros["model"])
-        parametros.pop("temperature")
-        return litellm.completion(messages=conversa, **parametros)
+    """litellm.completion com duas proteções:
+    - modelo que recusa `temperature` (alguns modelos novos): tenta sem e lembra disso;
+    - limite por minuto (429 não diário): espera e tenta de novo, até 3 vezes."""
+    for espera in (*ESPERAS_LIMITE_MINUTO_S, None):
+        try:
+            return litellm.completion(messages=conversa, **parametros)
+        except Exception as e:
+            if "temperature" in parametros and "temperature" in str(e).lower():
+                _MODELOS_SEM_TEMPERATURA.add(parametros["model"])
+                parametros.pop("temperature")
+                return litellm.completion(messages=conversa, **parametros)
+            if espera is None or not eh_limite_por_minuto(e):
+                raise
+            print(f"  (limite por minuto da API: aguardando {espera}s)", flush=True)
+            _dormir(espera)
 
 
 # ---------------------------------------------------------------- resultado

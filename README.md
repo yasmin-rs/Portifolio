@@ -102,6 +102,33 @@ Mesmo gabarito, mesmos prompts, mesma métrica ([`comparar_modelos.py`](src/ifoo
 - **A trava de segurança continua.** Mesmo com 2/2 no gabarito, um caso grave perdido custa muito mais que a regra em código.
 - **Cuidado:** o gabarito foi rotulado com auxílio de LLM, o que pode favorecer modelos maiores. Os números servem para comparar opções, não como acurácia absoluta.
 
+### E nas 500 reviews, onde não há gabarito?
+
+Rodei a classificação do Gemini nas 500 reviews da amostra e comparei com o Qwen ([`concordancia_modelos.py`](src/ifood/concordancia_modelos.py)). Sem rótulo humano não existe "resposta certa", então a medida é a **concordância** entre os dois modelos:
+
+| Medida | Valor |
+|---|---|
+| Concordam no tema | 73% (kappa 0,68: concordância boa) |
+| Concordam na gravidade | 78% (kappa 0,63: boa) |
+| Gravidade **alta** — Qwen / Gemini / os dois | 30 / **62** / 27 |
+
+**O Gemini manda para o gerente o dobro de casos graves.** No gabarito ele erra mais a gravidade (84% contra 92% do Qwen), o que sugere exagero, mas com só 2 casos graves no gabarito isso não está provado. Essa decisão é de negócio:
+- se o modelo local estiver certo, a API enche a fila do gerente com casos que não são graves;
+- se a API estiver certa, o modelo local deixa passar casos graves, e esse é o erro mais caro.
+
+As **201 reviews em que os modelos discordam** viraram uma fila de revisão humana, ordenada por risco, com as 38 discordâncias de caso grave no topo. É o caminho para ampliar o gabarito de forma eficiente: em vez de rotular 450 reviews do zero, a pessoa revisa primeiro as que os modelos não conseguem decidir.
+
+### Um classificador especializado (Laya)
+
+Testei também o [Laya](https://huggingface.co/convaiinnovations/laya), um modelo local que escolhe entre opções em vez de gerar texto, como candidato para rotular mais rápido ([`rotular_laya.py`](src/ifood/rotular_laya.py)):
+
+| Modelo | Tema | Gravidade | Tempo por review |
+|---|---|---|---|
+| Laya (local, CPU) | 62% | 36% | 2,8 s |
+| Palpite fixo "baixa" para tudo | — | 54% | — |
+
+Ele é rápido e grátis, mas na gravidade ficou **abaixo de um palpite fixo**. Gravidade exige julgamento, e um classificador genérico não resolveu isso sem treino específico. **Descartado com base em dados**, antes de rotular qualquer coisa com ele.
+
 ## Decisões de projeto
 
 - **Custo sob controle desde o início.** Nada roda no dataset inteiro sem pedido explícito. Todo script que chama modelo mostra antes a estimativa (chamadas × tokens × preço) e pede confirmação se o modelo for pago. Cache em disco: rodar de novo não custa nada e uma execução interrompida retoma de onde parou.
@@ -109,7 +136,8 @@ Mesmo gabarito, mesmos prompts, mesma métrica ([`comparar_modelos.py`](src/ifoo
 - **Toda chamada fica registrada.** Modelo, tokens, custo, latência, falhas de JSON e erros vão para `outputs/runs.jsonl`.
 - **Humano no circuito onde importa.** O sistema automatiza o volume e deixa para a pessoa a decisão de risco.
 - **IA só onde ela é melhor.** Limpeza, deduplicação, amostragem, regra de segurança e as perguntas do dashboard são pandas e regras, que são mais baratas, previsíveis e testáveis.
-- **Testes sem custo.** 42 testes com um modelo falso (`uv run pytest`).
+- **Testes sem custo.** 50 testes com um modelo falso (`uv run pytest`).
+- **Falha de infraestrutura não vira decisão de negócio.** Se a cota diária da API acaba, o lote para e salva como parcial; se bate o limite por minuto, espera e tenta de novo. Em nenhum dos casos a review é escalada "por erro".
 
 ## O que deu errado (e como resolvi)
 
@@ -118,12 +146,14 @@ Mesmo gabarito, mesmos prompts, mesma métrica ([`comparar_modelos.py`](src/ifoo
 - **Uma chamada "levou" 19 horas:** o PC suspendeu no meio da execução. Passei a reportar a **mediana** da latência em vez da média.
 - **Timeouts em CPU** com prompts maiores: aumentei o timeout e adicionei retry.
 - **Os agentes se contradiziam:** o revisor reprovava frases que o redator tinha sido instruído a usar ("vou compartilhar com a equipe"). Alinhei os dois prompts (v2) e as aprovações subiram de 38 para 42 de 45 no gabarito.
+- **A cota gratuita da API acabou no meio de uma rodada**, e o sistema mandou 369 reviews para humano como "falha na classificação". Em produção, isso encheria a fila do gerente por um problema de infraestrutura. Agora a cota diária esgotada **para o lote**, salva o resultado como parcial e o cache retoma no dia seguinte.
+- **O limite por minuto derrubou 131 de 500 chamadas:** as novas tentativas automáticas eram rápidas demais e falhavam todas dentro do mesmo minuto. Agora o código espera 20, 40 e 65 segundos antes de tentar de novo, e a segunda rodada terminou com zero erro.
 - **O redator concordou com uma reclamação preconceituosa** de um cliente. Adicionei uma regra explícita contra isso. Ainda há 1 caso no gabarito com termo inadequado: é uma limitação conhecida, e mais um motivo para o revisor existir.
 
 ## Limitações e próximos passos
 
 - O gabarito tem 50 reviews e foi rotulado **com auxílio de LLM**, então serve para comparar versões de prompt, mas é pequeno para afirmar acurácia absoluta.
-- Ampliar o gabarito para ~150 reviews, com mais casos graves, para que as diferenças entre prompts e modelos tenham significância estatística.
+- Ampliar o gabarito para ~150 reviews, com mais casos graves, para que as diferenças entre prompts e modelos tenham significância estatística. A fila de revisão, ordenada pelas discordâncias entre os modelos, já está gerada.
 - Rodar os 4 agentes nas 500 reviews com o modelo da API, para comparar o pipeline inteiro e não só a classificação.
 - Incluir um terceiro fornecedor (Claude) na comparação: o script já aceita vários modelos.
 - Modo incremental, para ampliar a amostra aos poucos sem reprocessar o que já foi analisado.
@@ -134,11 +164,13 @@ Requer Python 3.10+ e [uv](https://docs.astral.sh/uv/). Para o modelo local, [Ol
 
 ```bash
 uv sync
-cp .env.example .env                          # escolha o modelo: local (Ollama) ou API (Anthropic)
+cp .env.example .env                          # escolha o modelo: local (Ollama) ou API (Gemini, Claude...)
 # baixe o CSV do Kaggle (McDonald's Store Reviews) em data/raw/
 uv run python -m ifood.data_prep              # limpeza + amostra estratificada
 uv run python -m ifood.avaliar_prompts        # compara as versões de prompt no gabarito
 uv run python -m ifood.agentes --fonte amostra   # roda os 4 agentes (mostra a estimativa de custo antes)
+uv run python -m ifood.agentes --fonte amostra --so-classificar --modelo gemini/gemini-3.5-flash-lite
+uv run python -m ifood.concordancia_modelos   # concordância entre os modelos + fila de revisão
 uv run python -m ifood.exportar_dashboard     # gera os dados do dashboard
 uv run streamlit run app/dashboard.py
 
