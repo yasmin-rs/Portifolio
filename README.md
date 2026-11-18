@@ -2,7 +2,7 @@
 
 **Agentes de IA que leem avaliações de restaurantes, entendem o problema, decidem o que fazer e respondem ao cliente, e que sempre passam os casos graves para uma pessoa.**
 
-🔗 **Demo ao vivo:** [central-reviews-ai.streamlit.app](https://central-reviews-ai.streamlit.app/) · 🎥 **Vídeo de 2 min:** [LINK_DO_VIDEO](LINK_DO_VIDEO)
+🔗 **Demo ao vivo:** [central-reviews-ai.streamlit.app](https://central-reviews-ai.streamlit.app/) · 🎥 **Vídeo:** [youtu.be/ByTY6G1tJY4](https://youtu.be/ByTY6G1tJY4) · 🌐 **Portfólio:** [yasmin-rs.github.io](https://yasmin-rs.github.io/)
 
 Construído do zero em ~2 dias (11 e 12/11/2026), de ponta a ponta: dados → prompts avaliados → agentes → automação → dashboard publicado.
 
